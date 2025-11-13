@@ -871,6 +871,17 @@ CONFIG_ESP_ERR_TO_NAME_LOOKUP=y
 # end of ESP-Driver:GPIO Configurations
 
 #
+# ESP-Driver:SPI Configurations
+#
+# default:
+CONFIG_SPI_MASTER_ISR_IN_IRAM=y
+# default:
+# CONFIG_SPI_SLAVE_IN_IRAM is not set
+# default:
+CONFIG_SPI_SLAVE_ISR_IN_IRAM=y
+# end of ESP-Driver:SPI Configurations
+
+#
 # Hardware Settings
 #
 
@@ -1034,6 +1045,8 @@ CONFIG_ESP_BROWNOUT_USE_INTR=y
 # end of Brownout Detector
 # end of Power Supplier
 
+# default:
+CONFIG_ESP_SPI_BUS_LOCK_ISR_FUNCS_IN_IRAM=y
 # default:
 CONFIG_ESP_INTR_IN_IRAM=y
 # end of Hardware Settings
@@ -2074,24 +2087,17 @@ CONFIG_LV_DPI_DEF=130
 #
 # Operating System (OS)
 #
-# default:
-CONFIG_LV_OS_NONE=y
-# default:
+# CONFIG_LV_OS_NONE is not set
 # CONFIG_LV_OS_PTHREAD is not set
-# default:
-# CONFIG_LV_OS_FREERTOS is not set
-# default:
+CONFIG_LV_OS_FREERTOS=y
 # CONFIG_LV_OS_CMSIS_RTOS2 is not set
-# default:
 # CONFIG_LV_OS_RTTHREAD is not set
-# default:
 # CONFIG_LV_OS_WINDOWS is not set
-# default:
 # CONFIG_LV_OS_MQX is not set
-# default:
 # CONFIG_LV_OS_SDL2 is not set
-# default:
 # CONFIG_LV_OS_CUSTOM is not set
+# default:
+CONFIG_LV_USE_FREERTOS_TASK_NOTIFY=y
 # end of Operating System (OS)
 
 #
@@ -2105,6 +2111,10 @@ CONFIG_LV_DRAW_BUF_ALIGN=4
 CONFIG_LV_DRAW_LAYER_SIMPLE_BUF_SIZE=24576
 # default:
 CONFIG_LV_DRAW_LAYER_MAX_MEMORY=0
+# default:
+CONFIG_LV_DRAW_THREAD_STACK_SIZE=8192
+# default:
+CONFIG_LV_DRAW_THREAD_PRIO=3
 # default:
 CONFIG_LV_USE_DRAW_SW=y
 # default:
@@ -2269,7 +2279,7 @@ CONFIG_LV_ATTRIBUTE_MEM_ALIGN_SIZE=1
 # default:
 CONFIG_LV_FONT_MONTSERRAT_14=y
 # default:
-CONFIG_LV_FONT_MONTSERRAT_16=y
+# CONFIG_LV_FONT_MONTSERRAT_16 is not set
 # default:
 # CONFIG_LV_FONT_MONTSERRAT_18 is not set
 # default:
@@ -2468,7 +2478,7 @@ CONFIG_LV_USE_LABEL=y
 # default:
 CONFIG_LV_LABEL_TEXT_SELECTION=y
 # default:
-# CONFIG_LV_LABEL_LONG_TXT_HINT is not set
+CONFIG_LV_LABEL_LONG_TXT_HINT=y
 # default:
 CONFIG_LV_LABEL_WAIT_CHAR_COUNT=3
 # default:
@@ -2660,8 +2670,7 @@ CONFIG_LVGL_VERSION_PATCH=0
 # CONFIG_LV_USE_EVDEV is not set
 # default:
 # CONFIG_LV_USE_LIBINPUT is not set
-# default:
-# CONFIG_LV_USE_ST7735 is not set
+CONFIG_LV_USE_ST7735=y
 # default:
 # CONFIG_LV_USE_ST7789 is not set
 # default:
@@ -2669,7 +2678,7 @@ CONFIG_LVGL_VERSION_PATCH=0
 # default:
 # CONFIG_LV_USE_ILI9341 is not set
 # default:
-# CONFIG_LV_USE_GENERIC_MIPI is not set
+CONFIG_LV_USE_GENERIC_MIPI=y
 # default:
 # CONFIG_LV_USE_NXP_ELCDIF is not set
 # default:
