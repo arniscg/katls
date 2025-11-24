@@ -16,3 +16,4 @@ dependencies:
   #   public: true
   lvgl/lvgl: 9.4.0
   espressif/button: ^4.1.4
+  espressif/qrcode: ^0.1.0~2

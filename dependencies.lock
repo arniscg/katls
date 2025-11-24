@@ -23,6 +23,13 @@ dependencies:
       registry_url: https://components.espressif.com
       type: service
     version: 1.1.1
+  espressif/qrcode:
+    component_hash: 3b493771bc5d6ad30cbf87c25bf784aada8a08c941504355b55d6b75518ed7bc
+    dependencies: []
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    version: 0.1.0~2
   idf:
     source:
       type: idf
@@ -36,8 +43,9 @@ dependencies:
     version: 9.4.0
 direct_dependencies:
 - espressif/button
+- espressif/qrcode
 - idf
 - lvgl/lvgl
-manifest_hash: 1284e1cc46da6eccc2bc6fb80dd41e9ffac7996584b2329c93f42f9d0ee9e9ed
+manifest_hash: d23d8feb9de56d13b85028e78316d1c1ebb63f2383b08de385ed89435407a2a8
 target: esp32
 version: 2.0.0
