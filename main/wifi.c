@@ -4,6 +4,8 @@
 #include "esp_log.h"
 #include "esp_wifi.h"
 #include "freertos/event_groups.h"
+#include "freertos/ringbuf.h"
+#include "gui/gui.h"
 #include "nvs_flash.h"
 #include "qrcode.h"
 
@@ -21,52 +23,39 @@ static EventGroupHandle_t s_dpp_event_group;
 #define DPP_AUTH_FAIL_BIT BIT2
 #define WIFI_MAX_RETRY_NUM 3
 
-static const char *lt[] = {
-    /* 0 */ "  ",
-    /* 1 */ "\u2580 ",
-    /* 2 */ " \u2580",
-    /* 3 */ "\u2580\u2580",
-    /* 4 */ "\u2584 ",
-    /* 5 */ "\u2588 ",
-    /* 6 */ "\u2584\u2580",
-    /* 7 */ "\u2588\u2580",
-    /* 8 */ " \u2584",
-    /* 9 */ "\u2580\u2584",
-    /* 10 */ " \u2588",
-    /* 11 */ "\u2580\u2588",
-    /* 12 */ "\u2584\u2584",
-    /* 13 */ "\u2588\u2584",
-    /* 14 */ "\u2584\u2588",
-    /* 15 */ "\u2588\u2588",
-};
-
 void qrcode_draw_func(esp_qrcode_handle_t qrcode) {
   ESP_LOGI(TAG, "draw func");
   int size = esp_qrcode_get_size(qrcode);
   int border = 2;
-  unsigned char num = 0;
+  assert(size + 2 * border < 255);
+  uint8_t size_b = size + 2 * border;
 
-  for (int y = -border; y < size + border; y += 2) {
-    for (int x = -border; x < size + border; x += 2) {
-      num = 0;
-      if (esp_qrcode_get_module(qrcode, x, y)) {
-        num |= 1 << 0;
-      }
-      if ((x < size + border) && esp_qrcode_get_module(qrcode, x + 1, y)) {
-        num |= 1 << 1;
-      }
-      if ((y < size + border) && esp_qrcode_get_module(qrcode, x, y + 1)) {
-        num |= 1 << 2;
-      }
-      if ((x < size + border) && (y < size + border) &&
-          esp_qrcode_get_module(qrcode, x + 1, y + 1)) {
-        num |= 1 << 3;
-      }
-      printf("%s", lt[num]);
-    }
-    printf("\n");
+  void *item = NULL;
+  UBaseType_t res = xRingbufferSendAcquire(
+      gui_buf_handle, &item, size_b * size_b + 3, pdMS_TO_TICKS(100));
+  if (res != pdTRUE) {
+    ESP_LOGE(TAG, "failed to acquire ring buffer");
+    return;
   }
-  printf("\n");
+
+  uint8_t *buf = (uint8_t *)item;
+  buf[0] = 1;
+  buf[1] = size_b;
+  buf[2] = size_b;
+  ESP_LOGI(TAG, "buf size=%u", sizeof(buf));
+  unsigned i = 3;
+  for (int y = -border; y < size + border; ++y) {
+    for (int x = -border; x < size + border; ++x) {
+      buf[i++] = esp_qrcode_get_module(qrcode, x, y) ? 0 : 255;
+    }
+  }
+  assert(i == size_b * size_b + 3);
+
+  ESP_LOGI(TAG, "before send");
+  res = xRingbufferSendComplete(gui_buf_handle, item);
+  ESP_LOGI(TAG, "after send");
+  if (res != pdTRUE)
+    ESP_LOGE(TAG, "failed to send QR image");
 }
 
 static void event_handler(void *arg, esp_event_base_t event_base,
@@ -182,6 +171,8 @@ static void dpp_enrollee_init() {
 }
 
 void wifi_task(void *) {
+  vTaskDelay(10000 / portTICK_PERIOD_MS); // TODO
+
   // Initialize NVS
   esp_err_t ret = nvs_flash_init();
   if (ret == ESP_ERR_NVS_NO_FREE_PAGES ||

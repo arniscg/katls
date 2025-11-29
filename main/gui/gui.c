@@ -1,15 +1,13 @@
+#include "gui.h"
 #include "driver/gpio.h"
 #include "driver/spi_master.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/ringbuf.h"
-#include "gui.h"
 #include "lvgl.h"
 #include <unistd.h>
 
 #define TFT_HOST SPI3_HOST
-#define TFT_V_RES 160
-#define TFT_H_RES 128
 
 #define PIN_NUM_MOSI 23
 #define PIN_NUM_CLK 18
@@ -24,6 +22,7 @@ static spi_device_handle_t spi;
 
 extern void gui();
 extern void gui_button(uint8_t);
+extern void gui_set_qrcode(uint8_t *, unsigned, unsigned);
 
 static void tft_send_cmd(lv_display_t *disp, const uint8_t *cmd,
                          size_t cmd_size, const uint8_t *param,
@@ -93,7 +92,7 @@ static void spi_init() {
 void gui_task(void *) {
   ESP_LOGI(TAG, "started GUI task");
 
-  gui_buf_handle = xRingbufferCreate(1028, RINGBUF_TYPE_NOSPLIT);
+  gui_buf_handle = xRingbufferCreate(8192, RINGBUF_TYPE_NOSPLIT);
   assert(gui_buf_handle != NULL);
 
   spi_init();
@@ -133,8 +132,7 @@ void gui_task(void *) {
   char *item = NULL;
   while (1) {
     while (1) {
-      item =
-          (char *)xRingbufferReceive(gui_buf_handle, &item_size, 0);
+      item = (char *)xRingbufferReceive(gui_buf_handle, &item_size, 0);
       if (item == NULL) {
         // ESP_LOGI(TAG, "no item");
         break;
@@ -144,16 +142,28 @@ void gui_task(void *) {
       if (msg == 0) {
         if (item_size != 2) {
           ESP_LOGI(TAG, "invalid button message");
+          vRingbufferReturnItem(gui_buf_handle, item);
           continue;
         }
+        uint8_t but = item[1];
+        gui_button(but);
+      } else if (msg == 1) {
+        ESP_LOGI(TAG, "received image");
+        if (item_size < 4) {
+          ESP_LOGI(TAG, "image too short");
+          vRingbufferReturnItem(gui_buf_handle, item);
+          continue;
+        }
+        unsigned w = (uint8_t)item[1];
+        unsigned h = (uint8_t)item[2];
+        assert(w * h == item_size - 3);
+        ESP_LOGI(TAG, "image size: %u (%ux%u)", item_size - 3, w, h);
+        gui_set_qrcode((uint8_t *)(item + 3), w, h);
       } else {
         ESP_LOGI(TAG, "unhandled msg %d", msg);
-        continue;
       }
 
-      uint8_t but = item[1];
       vRingbufferReturnItem(gui_buf_handle, item);
-      gui_button(but);
     }
 
     uint32_t time_till_next = lv_timer_handler();

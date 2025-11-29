@@ -37,4 +37,15 @@ void scr_prompt_handle_button(PromptScreen *, uint8_t);
 void scr_prompt_handle_ok_cancel(PromptScreen *, uint8_t,
                                  TimerCallbackFunction_t);
 
+typedef struct {
+  lv_obj_t *screen;
+  lv_obj_t *qrcode;
+  lv_image_dsc_t dsc;
+  uint16_t *img_buf;
+} QRCodeScreen;
+
+void scr_qr_create(QRCodeScreen *);
+void scr_qr_destroy(QRCodeScreen *);
+void scr_qr_set_bitmap(QRCodeScreen *, uint8_t *, unsigned, unsigned);
+
 #endif

@@ -1,5 +1,6 @@
 #include "screen.h"
 #include "../../buttons.h"
+#include "../gui.h"
 #include "esp_log.h"
 
 static const char *TAG = "screen";
@@ -132,4 +133,69 @@ void scr_prompt_handle_ok_cancel(PromptScreen *s, uint8_t b,
   s->timer = xTimerCreate("ok_cancel_timer", pdMS_TO_TICKS(1000), pdFALSE,
                           (void *)0, cb);
   xTimerStart(s->timer, 0);
+}
+
+//
+// QRCodeScreen
+//
+
+void scr_qr_create(QRCodeScreen *s) {
+  ESP_LOGI(TAG, "scr_qr_create");
+  s->screen = lv_obj_create(NULL);
+  s->qrcode = lv_image_create(s->screen);
+  lv_obj_center(s->qrcode);
+
+  s->img_buf = NULL;
+  lv_memzero(&s->dsc, sizeof(s->dsc));
+}
+
+void scr_qr_destroy(QRCodeScreen *s) {
+  ESP_LOGI(TAG, "scr_qr_destroy");
+  if (s->screen)
+    lv_obj_delete(s->screen);
+}
+
+static void convert_l8_to_rgb565(const uint8_t *src, uint16_t *dst, int w,
+                                 int h) {
+  int total = w * h;
+  for (int i = 0; i < total; i++) {
+    uint8_t g = src[i]; // grayscale 0–255
+
+    // Convert grayscale → RGB565
+    uint16_t r = (g >> 3) & 0x1F;
+    uint16_t g5 = (g >> 2) & 0x3F;
+    uint16_t b = (g >> 3) & 0x1F;
+
+    dst[i] = (r << 11) | (g5 << 5) | b;
+  }
+}
+
+void scr_qr_set_bitmap(QRCodeScreen *s, uint8_t *buf, unsigned w, unsigned h) {
+  ESP_LOGI(TAG, "scr_qr_set_bitmap");
+
+  if (s->img_buf) {
+    lv_memzero(&s->dsc, sizeof(s->dsc));
+    free(s->img_buf);
+  }
+
+  uint16_t *rgb_buf = malloc(w * h * sizeof(uint16_t));
+  convert_l8_to_rgb565(buf, rgb_buf, w, h);
+  s->img_buf = rgb_buf;
+
+  unsigned from = w > h ? w : h;
+  unsigned to = TFT_H_RES > TFT_V_RES ? TFT_V_RES : TFT_H_RES;
+  unsigned scale = to / from;
+  if (!scale)
+    scale = 1;
+  ESP_LOGI(TAG, "scale=%u", scale);
+
+  s->dsc.header.magic = LV_IMAGE_HEADER_MAGIC;
+  s->dsc.header.cf = LV_COLOR_FORMAT_RGB565;
+  s->dsc.header.w = w;
+  s->dsc.header.h = h;
+  s->dsc.data_size = w * h * sizeof(uint16_t);
+  s->dsc.data = (uint8_t *)s->img_buf;
+  lv_image_set_scale(s->qrcode, 256 * scale);
+  lv_image_set_antialias(s->qrcode, false);
+  lv_image_set_src(s->qrcode, &s->dsc);
 }

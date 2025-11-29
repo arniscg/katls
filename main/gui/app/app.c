@@ -8,6 +8,7 @@ static const char *TAG = "GUI APP";
 typedef struct {
   SplashScreen *scr_splash;
   PromptScreen *scr_prompt;
+  QRCodeScreen *scr_qr;
 } App;
 
 static App app;
@@ -17,10 +18,15 @@ void gui() {
 
   app.scr_splash = NULL;
   app.scr_prompt = NULL;
+  app.scr_qr = NULL;
 
-  app.scr_splash = malloc(sizeof(SplashScreen));
-  scr_splash_create(app.scr_splash);
-  lv_screen_load(app.scr_splash->screen);
+  // app.scr_splash = malloc(sizeof(SplashScreen));
+  // scr_splash_create(app.scr_splash);
+  // lv_screen_load(app.scr_splash->screen);
+
+  app.scr_qr = malloc(sizeof(QRCodeScreen));
+  scr_qr_create(app.scr_qr);
+  lv_screen_load(app.scr_qr->screen);
 }
 
 static void prompt_callback(TimerHandle_t) {
@@ -68,4 +74,11 @@ void gui_button(uint8_t b) {
   }
 
   ESP_LOGI(TAG, "unhandled button %d", b);
+}
+
+void gui_set_qrcode(uint8_t *buf, unsigned w, unsigned h) {
+  if (!app.scr_qr)
+    return;
+
+  scr_qr_set_bitmap(app.scr_qr, buf, w, h);
 }
