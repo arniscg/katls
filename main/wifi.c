@@ -8,6 +8,7 @@
 #include "gui/gui.h"
 #include "nvs_flash.h"
 #include "qrcode.h"
+#include "state.h"
 
 static const char *TAG = "wifi";
 
@@ -30,15 +31,7 @@ void qrcode_draw_func(esp_qrcode_handle_t qrcode) {
   assert(size + 2 * border < 255);
   uint8_t size_b = size + 2 * border;
 
-  void *item = NULL;
-  UBaseType_t res = xRingbufferSendAcquire(
-      gui_buf_handle, &item, size_b * size_b + 3, pdMS_TO_TICKS(100));
-  if (res != pdTRUE) {
-    ESP_LOGE(TAG, "failed to acquire ring buffer");
-    return;
-  }
-
-  uint8_t *buf = (uint8_t *)item;
+  uint8_t *buf = malloc(size_b * size_b + 3);
   buf[0] = 1;
   buf[1] = size_b;
   buf[2] = size_b;
@@ -51,11 +44,14 @@ void qrcode_draw_func(esp_qrcode_handle_t qrcode) {
   }
   assert(i == size_b * size_b + 3);
 
-  ESP_LOGI(TAG, "before send");
-  res = xRingbufferSendComplete(gui_buf_handle, item);
-  ESP_LOGI(TAG, "after send");
-  if (res != pdTRUE)
-    ESP_LOGE(TAG, "failed to send QR image");
+  if (xSemaphoreTake(state_mutex, portMAX_DELAY) != pdTRUE) {
+    ESP_LOGE(TAG, "failed to acquire state mutex");
+    free(buf);
+    return;
+  }
+  state.wifi.status = WIFI_STATUS_WAITING_SCAN;
+  state.wifi.qrcode = buf;
+  xSemaphoreGive(state_mutex);
 }
 
 static void event_handler(void *arg, esp_event_base_t event_base,
@@ -65,6 +61,12 @@ static void event_handler(void *arg, esp_event_base_t event_base,
     case WIFI_EVENT_STA_START:
       ESP_ERROR_CHECK(esp_supp_dpp_start_listen());
       ESP_LOGI(TAG, "Started listening for DPP Authentication");
+      if (xSemaphoreTake(state_mutex, portMAX_DELAY) != pdTRUE) {
+        ESP_LOGE(TAG, "failed to acquire state mutex");
+        return;
+      }
+      state.wifi.status = WIFI_STATUS_CONNECTING;
+      xSemaphoreGive(state_mutex);
       break;
     case WIFI_EVENT_STA_DISCONNECTED:
       if (s_retry_num < WIFI_MAX_RETRY_NUM) {
@@ -74,10 +76,24 @@ static void event_handler(void *arg, esp_event_base_t event_base,
       } else {
         xEventGroupSetBits(s_dpp_event_group, DPP_CONNECT_FAIL_BIT);
       }
+      if (xSemaphoreTake(state_mutex, portMAX_DELAY) != pdTRUE) {
+        ESP_LOGE(TAG, "failed to acquire state mutex");
+        return;
+      }
+      state.wifi.status = WIFI_STATUS_WAITING_SCAN;
+      xSemaphoreGive(state_mutex);
       break;
     case WIFI_EVENT_STA_CONNECTED:
       ESP_LOGI(TAG, "Successfully connected to the AP ssid : %s ",
                s_dpp_wifi_config.sta.ssid);
+      if (xSemaphoreTake(state_mutex, portMAX_DELAY) != pdTRUE) {
+        ESP_LOGE(TAG, "failed to acquire state mutex");
+        return;
+      }
+      state.wifi.status = WIFI_STATUS_CONNECTED;
+      memcpy(&state.wifi.conf, &s_dpp_wifi_config.sta,
+             sizeof(s_dpp_wifi_config.sta));
+      xSemaphoreGive(state_mutex);
       break;
     case WIFI_EVENT_DPP_URI_READY:
       wifi_event_dpp_uri_ready_t *uri_data = event_data;
@@ -106,7 +122,12 @@ static void event_handler(void *arg, esp_event_base_t event_base,
       } else {
         xEventGroupSetBits(s_dpp_event_group, DPP_AUTH_FAIL_BIT);
       }
-
+      if (xSemaphoreTake(state_mutex, portMAX_DELAY) != pdTRUE) {
+        ESP_LOGE(TAG, "failed to acquire state mutex");
+        return;
+      }
+      state.wifi.status = WIFI_STATUS_WAITING_SCAN;
+      xSemaphoreGive(state_mutex);
       break;
     default:
       break;
