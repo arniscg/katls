@@ -14,9 +14,16 @@ typedef enum {
 } WifiStatus;
 
 typedef struct {
+  uint8_t *data;
+  unsigned w;
+  unsigned h;
+} Img;
+
+typedef struct {
   WifiStatus status;
-  uint8_t *qrcode;
+  Img qrcode;
   wifi_sta_config_t conf;
+  esp_ip4_addr_t ip;
 } WifiState;
 
 typedef struct {

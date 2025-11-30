@@ -7,6 +7,7 @@ SemaphoreHandle_t state_mutex;
 void state_init() {
   state_mutex = xSemaphoreCreateMutex();
   state.wifi.status = WIFI_STATUS_INIT;
-  state.wifi.qrcode = NULL;
-  memset(&state, 0, sizeof(state.wifi.conf));
+  memset(&state.wifi.qrcode, 0, sizeof(state.wifi.qrcode));
+  memset(&state.wifi.conf, 0, sizeof(state.wifi.conf));
+  state.wifi.ip.addr = 0;
 }

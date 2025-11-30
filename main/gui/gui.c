@@ -5,6 +5,8 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/ringbuf.h"
 #include "lvgl.h"
+#include "screen/screen.h"
+#include "screen/wifi_screen.h"
 #include <unistd.h>
 
 #define TFT_HOST SPI3_HOST
@@ -47,6 +49,14 @@ static void tft_send_cmd(lv_display_t *disp, const uint8_t *cmd,
 
 static void tft_send_color(lv_display_t *disp, const uint8_t *cmd,
                            size_t cmd_size, uint8_t *param, size_t param_size) {
+  // swap bytes in-place
+  uint16_t *pixels = (uint16_t *)param;
+  size_t count = param_size / 2;
+  for (size_t i = 0; i < count; i++) {
+    uint16_t p = pixels[i];
+    pixels[i] = (p >> 8) | (p << 8);
+  }
+
   tft_send_cmd(disp, cmd, cmd_size, param, param_size);
   lv_display_flush_ready(disp);
 }
@@ -108,7 +118,7 @@ void gui_task(void *) {
 
   ESP_LOGI(TAG, "setup the display");
   lv_display_t *display = lv_st7735_create(
-      TFT_H_RES, TFT_V_RES, LV_LCD_FLAG_BGR, tft_send_cmd, tft_send_color);
+      TFT_H_RES, TFT_V_RES, LV_LCD_FLAG_NONE, tft_send_cmd, tft_send_color);
   lv_disp_set_rotation(display, LV_DISP_ROTATION_90);
 
   uint32_t buf_size =
@@ -126,7 +136,9 @@ void gui_task(void *) {
 
   ESP_LOGI(TAG, "Started GUI task loop");
 
-  gui();
+  // gui();
+  BaseScreen *s = screen_wifi_init();
+  lv_scr_load(s->root);
 
   size_t item_size;
   char *item = NULL;
@@ -138,30 +150,30 @@ void gui_task(void *) {
         break;
       }
 
-      uint8_t msg = item[0];
-      if (msg == 0) {
-        if (item_size != 2) {
-          ESP_LOGI(TAG, "invalid button message");
-          vRingbufferReturnItem(gui_buf_handle, item);
-          continue;
-        }
-        uint8_t but = item[1];
-        gui_button(but);
-      } else if (msg == 1) {
-        ESP_LOGI(TAG, "received image");
-        if (item_size < 4) {
-          ESP_LOGI(TAG, "image too short");
-          vRingbufferReturnItem(gui_buf_handle, item);
-          continue;
-        }
-        unsigned w = (uint8_t)item[1];
-        unsigned h = (uint8_t)item[2];
-        assert(w * h == item_size - 3);
-        ESP_LOGI(TAG, "image size: %u (%ux%u)", item_size - 3, w, h);
-        gui_set_qrcode((uint8_t *)(item + 3), w, h);
-      } else {
-        ESP_LOGI(TAG, "unhandled msg %d", msg);
-      }
+      s->on_event(item[0], item + 1, item_size - 1);
+      // if (msg == 0) {
+      //   if (item_size != 2) {
+      //     ESP_LOGI(TAG, "invalid button message");
+      //     vRingbufferReturnItem(gui_buf_handle, item);
+      //     continue;
+      //   }
+      //   uint8_t but = item[1];
+      //   gui_button(but);
+      // } else if (msg == 1) {
+      //   ESP_LOGI(TAG, "received image");
+      //   if (item_size < 4) {
+      //     ESP_LOGI(TAG, "image too short");
+      //     vRingbufferReturnItem(gui_buf_handle, item);
+      //     continue;
+      //   }
+      //   unsigned w = (uint8_t)item[1];
+      //   unsigned h = (uint8_t)item[2];
+      //   assert(w * h == item_size - 3);
+      //   ESP_LOGI(TAG, "image size: %u (%ux%u)", item_size - 3, w, h);
+      //   gui_set_qrcode((uint8_t *)(item + 3), w, h);
+      // } else {
+      //   ESP_LOGI(TAG, "unhandled msg %d", msg);
+      // }
 
       vRingbufferReturnItem(gui_buf_handle, item);
     }
