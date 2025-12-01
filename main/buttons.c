@@ -12,12 +12,10 @@ static const char *TAG = "BUTTONS";
 static void button_single_click_cb(void *arg, void *usr_data) {
   uint8_t but_n = (uint8_t)(int)usr_data;
 
-  char msg[2] = {0, but_n};
+  char msg[2] = {GUI_EVT_BUTTON_PRESSED, but_n};
 
-  UBaseType_t res = xRingbufferSend(gui_buf_handle, msg, sizeof(msg), 0);
-  if (res != pdTRUE) {
-    printf("Failed to send button press\n");
-  }
+  if (xRingbufferSend(gui_buf_handle, msg, sizeof(msg), 0) != pdTRUE)
+    ESP_LOGE(TAG, "failed to send button press");
 }
 
 void buttons_init() {

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "screen.h"
+#include "base.h"
 
 typedef struct {
   BaseScreen base;
@@ -14,4 +14,4 @@ typedef struct {
   uint16_t *rgb;
 } WifiScreen;
 
-BaseScreen *screen_wifi_init();
+void screen_wifi_init(WifiScreen *s);

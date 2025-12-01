@@ -6,6 +6,11 @@
 #define TFT_V_RES 160
 #define TFT_H_RES 128
 
+typedef enum {
+  GUI_EVT_BUTTON_PRESSED,
+  GUI_EVT_WIFI_CHANGED,
+} GUIEvent;
+
 extern RingbufHandle_t gui_buf_handle;
 
 void gui_task(void *);

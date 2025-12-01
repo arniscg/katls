@@ -5,7 +5,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/ringbuf.h"
 #include "lvgl.h"
-#include "screen/screen.h"
+#include "screen/screens.h"
 #include "screen/wifi_screen.h"
 #include <unistd.h>
 
@@ -21,10 +21,6 @@ static const char *TAG = "GUI";
 
 RingbufHandle_t gui_buf_handle;
 static spi_device_handle_t spi;
-
-extern void gui();
-extern void gui_button(uint8_t);
-extern void gui_set_qrcode(uint8_t *, unsigned, unsigned);
 
 static void tft_send_cmd(lv_display_t *disp, const uint8_t *cmd,
                          size_t cmd_size, const uint8_t *param,
@@ -125,9 +121,6 @@ void gui_task(void *) {
       TFT_H_RES * TFT_V_RES *
       lv_color_format_get_size(lv_display_get_color_format(display));
 
-  ESP_LOGI(TAG, "pix size: %d",
-           lv_color_format_get_size(lv_display_get_color_format(display)));
-
   lv_color_t *buf = lv_malloc(buf_size);
   assert(buf != NULL);
 
@@ -136,45 +129,17 @@ void gui_task(void *) {
 
   ESP_LOGI(TAG, "Started GUI task loop");
 
-  // gui();
-  BaseScreen *s = screen_wifi_init();
-  lv_scr_load(s->root);
+  screens_init();
 
   size_t item_size;
   char *item = NULL;
   while (1) {
+    // consume all received events
     while (1) {
       item = (char *)xRingbufferReceive(gui_buf_handle, &item_size, 0);
-      if (item == NULL) {
-        // ESP_LOGI(TAG, "no item");
+      if (item == NULL)
         break;
-      }
-
-      s->on_event(item[0], item + 1, item_size - 1);
-      // if (msg == 0) {
-      //   if (item_size != 2) {
-      //     ESP_LOGI(TAG, "invalid button message");
-      //     vRingbufferReturnItem(gui_buf_handle, item);
-      //     continue;
-      //   }
-      //   uint8_t but = item[1];
-      //   gui_button(but);
-      // } else if (msg == 1) {
-      //   ESP_LOGI(TAG, "received image");
-      //   if (item_size < 4) {
-      //     ESP_LOGI(TAG, "image too short");
-      //     vRingbufferReturnItem(gui_buf_handle, item);
-      //     continue;
-      //   }
-      //   unsigned w = (uint8_t)item[1];
-      //   unsigned h = (uint8_t)item[2];
-      //   assert(w * h == item_size - 3);
-      //   ESP_LOGI(TAG, "image size: %u (%ux%u)", item_size - 3, w, h);
-      //   gui_set_qrcode((uint8_t *)(item + 3), w, h);
-      // } else {
-      //   ESP_LOGI(TAG, "unhandled msg %d", msg);
-      // }
-
+      screens_on_event(item[0], (uint8_t *)(item + 1), item_size - 1);
       vRingbufferReturnItem(gui_buf_handle, item);
     }
 

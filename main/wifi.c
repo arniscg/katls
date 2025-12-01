@@ -6,7 +6,6 @@
 #include "freertos/event_groups.h"
 #include "freertos/ringbuf.h"
 #include "gui/gui.h"
-#include "gui/screen/screen.h"
 #include "nvs_flash.h"
 #include "qrcode.h"
 #include "state.h"
