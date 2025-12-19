@@ -1,0 +1,8 @@
+FROM alpine:3.23.2
+
+RUN apk add --no-cache sqlite busybox-suid
+
+COPY ./backup/backup.sh /etc/periodic/daily/pechka-backup
+RUN chmod +x /etc/periodic/daily/pechka-backup
+
+CMD ["crond", "-f", "-l", "2"]

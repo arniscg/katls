@@ -1,0 +1,13 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.app
+    ports:
+      - "8000:8000"
+  backup:
+    build:
+      context: .
+      dockerfile: Dockerfile.backup
+    volumes:
+      - /mnt/pechka-backups:/backups

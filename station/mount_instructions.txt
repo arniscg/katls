@@ -1,0 +1,17 @@
+sudo mkdir -p /mnt/pechka-backups
+sudo chown root:root /mnt/pechka-backups
+sudo chmod 755 /mnt/pechka-backups
+
+# test
+sudo mount -t nfs synology:/volume1/backups /mnt/pechka-backups
+mount | grep pechka-backups
+ls /mnt/pechka-backups
+sudo umount /mnt/pechka-backups
+
+sudo nano /etc/fstab
+
+192.168.8.244:/volume1/pechkabackups  /mnt/pechka-backups  nfs  \
+_netdev,x-systemd.automount,noatime,nfsvers=4  0  0
+
+sudo systemctl daemon-reload
+sudo systemctl restart remote-fs.target
