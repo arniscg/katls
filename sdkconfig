@@ -3232,9 +3232,7 @@ CONFIG_LV_USE_FONT_PLACEHOLDER=y
 #
 # Text Settings
 #
-# default:
 CONFIG_LV_TXT_ENC_UTF8=y
-# default:
 # CONFIG_LV_TXT_ENC_ASCII is not set
 # default:
 CONFIG_LV_TXT_BREAK_CHARS=" ,.;:-_)}"
