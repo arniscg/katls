@@ -5,6 +5,9 @@ services:
       dockerfile: Dockerfile.app
     ports:
       - "8000:8000"
+    volumes:
+      - ./data:/data
+      - /mnt/pechka-backups:/backups
   backup:
     build:
       context: .

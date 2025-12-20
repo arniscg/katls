@@ -2,11 +2,30 @@ import sqlite3
 from pathlib import Path
 from .model import Event
 import json
+import logging
+import shutil
 
-DB_PATH = Path("/pechka-journal.db")
+logger = logging.getLogger("uvicorn.info")
+
+DB_PATH = Path("/data/pechka-journal.db")
+BACKUP_PATH = Path("/backups")
 
 
 def db_init() -> None:
+    if not DB_PATH.exists():
+        logger.info("db doesn't exist")
+        backups = sorted(BACKUP_PATH.glob("pechka-journal_*.db"), reverse=True)
+
+        if not backups:
+            logger.info("no backups found")
+        else:
+            logger.info(f"restoring backup {backups[0]}")
+
+            DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(backups[0], DB_PATH)
+    else:
+        logger.info("db already exists")
+
     conn = sqlite3.connect(DB_PATH)
     conn.execute("PRAGMA journal_mode=WAL;")
     conn.execute("PRAGMA synchronous=NORMAL;")
