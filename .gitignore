@@ -4,3 +4,4 @@ build
 .devcontainer
 __pycache__
 station/venv
+*.db

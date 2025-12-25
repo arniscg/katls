@@ -1,11 +1,13 @@
 #include "wifi.h"
 #include "esp_dpp.h"
 #include "esp_err.h"
+#include "esp_http_client.h"
 #include "esp_log.h"
 #include "esp_wifi.h"
 #include "freertos/event_groups.h"
 #include "freertos/ringbuf.h"
 #include "gui/gui.h"
+#include "journal.h"
 #include "nvs_flash.h"
 #include "qrcode.h"
 #include "state.h"
@@ -14,7 +16,11 @@ static const char *TAG = "wifi";
 
 wifi_config_t s_dpp_wifi_config;
 
+RingbufHandle_t wifi_buf_handle;
+
 static int s_retry_num = 0;
+
+static esp_http_client_handle_t client = NULL;
 
 /* FreeRTOS event group to signal when we are connected*/
 static EventGroupHandle_t s_dpp_event_group;
@@ -23,11 +29,18 @@ static EventGroupHandle_t s_dpp_event_group;
 #define DPP_CONNECT_FAIL_BIT BIT1
 #define DPP_AUTH_FAIL_BIT BIT2
 #define WIFI_MAX_RETRY_NUM 3
+#define URL "http://192.168.8.TODO:8000"
 
-static void notify_gui() {
+static void notify_gui_changed() {
   uint8_t msg[] = {GUI_EVT_WIFI_CHANGED};
   if (xRingbufferSend(gui_buf_handle, msg, sizeof(msg), 0) != pdTRUE)
-    ESP_LOGE(TAG, "failed to send wifi chagned event");
+    ESP_LOGE(TAG, "failed to send wifi changed event");
+}
+
+static void notify_gui_http_resp(uint8_t reqid, uint8_t status) {
+  uint8_t msg[] = {GUI_EVT_HTTP_SEND_RESP, reqid, status};
+  if (xRingbufferSend(gui_buf_handle, msg, sizeof(msg), 0) != pdTRUE)
+    ESP_LOGE(TAG, "failed to send http send resp event");
 }
 
 void qrcode_draw_func(esp_qrcode_handle_t qrcode) {
@@ -55,7 +68,7 @@ void qrcode_draw_func(esp_qrcode_handle_t qrcode) {
   state.wifi.qrcode.w = size_b;
   state.wifi.qrcode.h = size_b;
   assert(xSemaphoreGive(state_mutex) == pdTRUE);
-  notify_gui();
+  notify_gui_changed();
 }
 
 static void event_handler(void *arg, esp_event_base_t event_base,
@@ -82,7 +95,7 @@ static void event_handler(void *arg, esp_event_base_t event_base,
       assert(xSemaphoreTake(state_mutex, portMAX_DELAY) == pdTRUE);
       state.wifi.status = WIFI_STATUS_WAITING_SCAN;
       assert(xSemaphoreGive(state_mutex) == pdTRUE);
-      notify_gui();
+      notify_gui_changed();
       break;
     case WIFI_EVENT_STA_CONNECTED:
       ESP_LOGI(TAG, "Successfully connected to the AP ssid : %s ",
@@ -107,7 +120,7 @@ static void event_handler(void *arg, esp_event_base_t event_base,
       memcpy(&state.wifi.conf, &s_dpp_wifi_config.sta,
              sizeof(s_dpp_wifi_config.sta));
       assert(xSemaphoreGive(state_mutex) == pdTRUE);
-      notify_gui();
+      notify_gui_changed();
 
       esp_wifi_connect();
       break;
@@ -125,7 +138,7 @@ static void event_handler(void *arg, esp_event_base_t event_base,
       assert(xSemaphoreTake(state_mutex, portMAX_DELAY) == pdTRUE);
       state.wifi.status = WIFI_STATUS_WAITING_SCAN;
       assert(xSemaphoreGive(state_mutex) == pdTRUE);
-      notify_gui();
+      notify_gui_changed();
       break;
     default:
       break;
@@ -140,7 +153,7 @@ static void event_handler(void *arg, esp_event_base_t event_base,
     state.wifi.status = WIFI_STATUS_CONNECTED;
     state.wifi.ip = event->ip_info.ip;
     assert(xSemaphoreGive(state_mutex) == pdTRUE);
-    notify_gui();
+    notify_gui_changed();
 
     xEventGroupSetBits(s_dpp_event_group, DPP_CONNECTED_BIT);
   }
@@ -196,7 +209,116 @@ static void dpp_enrollee_init() {
   vEventGroupDelete(s_dpp_event_group);
 }
 
+static int http_post(char *data) {
+  esp_http_client_config_t config = {
+      .host = URL,
+      .path = "/events",
+  };
+  size_t len = strlen(data);
+  client = esp_http_client_init(&config);
+  esp_http_client_set_method(client, HTTP_METHOD_POST);
+  if (len) {
+    esp_http_client_set_header(client, "Content-Type", "application/json");
+    esp_http_client_set_post_field(client, data, len);
+  }
+  int err = esp_http_client_perform(client);
+  esp_http_client_cleanup(client);
+  return err;
+}
+
+static void handle_send_entry(uint8_t reqid, uint8_t type, char *data,
+                              size_t size) {
+  ESP_LOGI(TAG, "handle_send_entry");
+  char postdata[256];
+  switch (type) {
+  case ENTRY_TEMP: {
+    if (size != 1) {
+      ESP_LOGE(TAG, "temperature entry invalid size");
+      return;
+    }
+    uint8_t v = (uint8_t)data[0];
+    snprintf(postdata, sizeof(postdata), "{\"value\": %u}", v);
+    break;
+  }
+  case ENTRY_BAGS: {
+    if (size != 1) {
+      ESP_LOGE(TAG, "add-bags entry invalid size");
+      return;
+    }
+    uint8_t v = (uint8_t)data[0];
+    snprintf(postdata, sizeof(postdata), "{\"value\": %u}", v);
+    break;
+  }
+  case ENTRY_CLEAN: {
+    if (size != 0) {
+      ESP_LOGE(TAG, "clean entry invalid size");
+      return;
+    }
+    postdata[0] = '\0';
+    break;
+  }
+  case ENTRY_RESTOCK: {
+    if (size != 1) {
+      ESP_LOGE(TAG, "restock entry invalid size");
+      return;
+    }
+    uint8_t v = (uint8_t)data[0];
+    snprintf(postdata, sizeof(postdata), "{\"value\": %u}", v);
+    break;
+  }
+  case ENTRY_STOP: {
+    if (size != 0) {
+      ESP_LOGE(TAG, "off entry invalid size");
+      return;
+    }
+    postdata[0] = '\0';
+    break;
+  }
+  default:
+    ESP_LOGE(TAG, "unhandled entry type %d", type);
+    return;
+  }
+
+  if (http_post(postdata) == ESP_OK) {
+    ESP_LOGI(TAG, "HTTP POST Status = %d, content_length = %" PRId64,
+             esp_http_client_get_status_code(client),
+             esp_http_client_get_content_length(client));
+    notify_gui_http_resp(reqid, 0);
+  } else {
+    ESP_LOGE(TAG, "HTTP POST request failed");
+    // ESP_LOGE(TAG, "HTTP POST request failed: %s", esp_err_to_name(err));
+    notify_gui_http_resp(reqid, 1);
+  }
+}
+
+static void handle_msg(char *data, size_t size) {
+
+  if (size < 1) {
+    ESP_LOGE(TAG, "msg too short");
+    return;
+  }
+
+  WifiMsg msg = (WifiMsg)data[0];
+  ESP_LOGI(TAG, "handle msg %d", msg);
+
+  if (msg == WIFI_HTTP_SEND) {
+    if (size < 3) {
+      ESP_LOGE(TAG, "http send msg too short");
+      return;
+    }
+
+    uint8_t reqid = (uint8_t)data[1];
+    uint8_t type = (uint8_t)data[2];
+    handle_send_entry(reqid, type, data + 3, size - 3);
+  } else {
+    ESP_LOGE(TAG, "unhandled msg %d", msg);
+  }
+}
+
 void wifi_task(void *) {
+  wifi_buf_handle = xRingbufferCreate(128, RINGBUF_TYPE_NOSPLIT);
+  assert(wifi_buf_handle != NULL);
+
   // Initialize NVS
   esp_err_t ret = nvs_flash_init();
   if (ret == ESP_ERR_NVS_NO_FREE_PAGES ||
@@ -207,7 +329,15 @@ void wifi_task(void *) {
   ESP_ERROR_CHECK(ret);
   dpp_enrollee_init();
 
+  size_t item_size;
+  char *item = NULL;
   while (1) {
-    vTaskDelay(1000 / portTICK_PERIOD_MS);
+    item = (char *)xRingbufferReceive(wifi_buf_handle, &item_size,
+                                      pdMS_TO_TICKS(1000));
+    if (item == NULL)
+      continue;
+
+    handle_msg(item, item_size);
+    vRingbufferReturnItem(wifi_buf_handle, item);
   }
 }

@@ -14,11 +14,15 @@ typedef struct {
     INPUT_BAGS,
     INPUT_CLEAN,
     INPUT_STOP,
+    SENDING,
+    SENDING_FAILED,
+    SENDING_SUCCESS,
   } state;
 
   int temp;
   int bags;
   TimerHandle_t timer;
+  uint8_t reqid;
 } InputScreen;
 
 void screen_input_init(InputScreen *s);
