@@ -12,7 +12,9 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "gui/gui.h"
+#include "journal.h"
 #include "sdkconfig.h"
+#include "state.h"
 #include "wifi.h"
 #include <assert.h>
 #include <inttypes.h>
@@ -22,7 +24,6 @@
 #include <sys/lock.h>
 #include <sys/param.h>
 #include <unistd.h>
-#include "state.h"
 
 #define GUI_TASK_STACK_SIZE (4 * 1024)
 #define GUI_TASK_PRIORITY 2
@@ -34,6 +35,7 @@ static const char *TAG = "main";
 
 void app_main(void) {
   ESP_LOGI(TAG, "app_main");
+  journal_init();
   state_init();
   buttons_init();
 

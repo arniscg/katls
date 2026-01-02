@@ -1,4 +1,5 @@
 #include "journal.h"
+#include "./wifi.h"
 #include "esp_err.h"
 #include "esp_log.h"
 #include "esp_vfs.h"
@@ -7,130 +8,253 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define ENTRY_HDR_LEN 5
+#define JOURNAL_SIZE 16
+
+SemaphoreHandle_t journal_mutex;
+
 static const char *TAG = "journal";
-static const char *base_path = "/spiflash";
-static const char *journal_path = "/spiflash/journal.bin";
-static wl_handle_t wl_handle = WL_INVALID_HANDLE;
+
+typedef struct {
+  BaseEntry *entries[JOURNAL_SIZE];
+  unsigned currsize;
+  unsigned idx;
+} Journal;
+static bool initdone = false;
+static unsigned id = 0;
+static Journal j;
 
 void journal_init() {
-  ESP_LOGI(TAG, "init");
+  if (initdone) {
+    ESP_LOGE(TAG, "journal_init: already initialized");
+    return;
+  }
+  journal_mutex = xSemaphoreCreateMutex();
+  initdone = true;
+  j.currsize = 0;
+  j.idx = 0;
 
-  const esp_vfs_fat_mount_config_t mount_config = {
-      .max_files = 4,
-      .format_if_mount_failed = false,
-      .allocation_unit_size = CONFIG_WL_SECTOR_SIZE,
-      .use_one_fat = false,
-  };
-
-  esp_err_t err = esp_vfs_fat_spiflash_mount_rw_wl(base_path, "storage",
-                                                   &mount_config, &wl_handle);
-  ESP_ERROR_CHECK(err);
-
-  // err = esp_vfs_fat_spiflash_unmount_rw_wl(base_path, wl_handle);
-  // ESP_ERROR_CHECK(err);
+  for (unsigned i = 0; i < JOURNAL_SIZE; ++i)
+    j.entries[i] = NULL;
 }
 
-FILE *journal_read_init() {
-  FILE *f = fopen(journal_path, "r");
-  if (f == NULL)
-    return NULL;
-
-  char buf[4];
-  if (fread(buf, 1, 4, f) != 4) {
-    ESP_LOGE(TAG, "init failed");
-    fclose(f);
-    return NULL;
-  }
-
-  if (buf[0] != 'J' || buf[1] != 'R' || buf[2] != 'N' || buf[3] != 'L') {
-    ESP_LOGE(TAG, "failed to read magic numbers");
-    fclose(f);
-    return NULL;
-  }
-
-  if (fread(buf, 1, 1, f) != 1) {
-    ESP_LOGE(TAG, "init failed");
-    fclose(f);
-    return NULL;
-  }
-
-  if (buf[0] != 1) {
-    ESP_LOGE(TAG, "unsupported version");
-  }
-
-  return f;
+unsigned journal_idx_next() {
+  return j.idx == JOURNAL_SIZE - 1 ? 0 : j.idx + 1;
 }
 
-bool journal_next_entry(FILE *f, BaseEntry **ret) {
-  BaseEntry base;
-  if (fread(&base.type, 1, 1, f) != 1)
-    return false;
-  if (fread(&base.time, 1, 8, f) != 8)
-    return false;
+bool journal_add(BaseEntry *e) {
+  unsigned nextidx = journal_idx_next();
 
-  if (base.type == ENTRY_TEMP) {
-    TempEntry *e = malloc(sizeof(TempEntry));
-    e->b = base;
-    if (fread(&e->temp, 1, 1, f) != 1)
+  if (j.currsize == JOURNAL_SIZE) {
+    // remove oldest
+    BaseEntry *del = j.entries[nextidx];
+    assert(del != NULL);
+
+    if (del->state != ENTRY_STATE_STORED) {
+      ESP_LOGE(TAG, "cannot free journal space, oldest entry not stored");
       return false;
-    *ret = (BaseEntry *)e;
-  } else if (base.type == ENTRY_STOP) {
-    StopEntry *e = malloc(sizeof(StopEntry));
-    e->b = base;
-    *ret = (BaseEntry *)e;
-  } else if (base.type == ENTRY_BAGS) {
-    BagsEntry *e = malloc(sizeof(BagsEntry));
-    e->b = base;
-    if (fread(&e->count, 1, 1, f) != 1)
-      return false;
-    *ret = (BaseEntry *)e;
-  } else if (base.type == ENTRY_RESTOCK) {
-    RestockEntry *e = malloc(sizeof(RestockEntry));
-    e->b = base;
-    if (fread(&e->count, 1, 2, f) != 2)
-      return false;
-    *ret = (BaseEntry *)e;
-  } else if (base.type == ENTRY_CLEAN) {
-    CleanEntry *e = malloc(sizeof(CleanEntry));
-    e->b = base;
-    *ret = (BaseEntry *)e;
-  } else {
-    return false;
+    }
+
+    free(del);
+    j.entries[nextidx] = NULL;
+    --j.currsize;
   }
 
-  fseek(f, 1, SEEK_CUR);
+  assert(j.entries[nextidx] == NULL);
+  j.entries[nextidx] = e;
+  j.idx = nextidx;
+
+  ESP_LOGI(TAG, "entry added");
+  entry_store(e);
   return true;
 }
 
-void journal_entry_to_str(BaseEntry *e, char *buf, size_t len) {
+BaseEntry *journal_find_entry(unsigned id) {
+  for (unsigned i = 0; i < JOURNAL_SIZE; ++i) {
+    if (j.entries[i] == NULL)
+      continue;
+    if (j.entries[i]->id == id)
+      return j.entries[i];
+  }
+
+  return NULL;
+}
+
+void entry_to_str(BaseEntry *e, char *buf, size_t len) {
   struct tm *t = localtime((time_t *)&e->time);
   size_t time_sz = strftime(buf, len, "%d.%m.%Y %H:%M", t);
 
   switch (e->type) {
-  case ENTRY_TEMP: {
+  case ENTRY_TYPE_TEMP: {
     TempEntry *x = (TempEntry *)e;
     snprintf(buf + time_sz, len - time_sz, " %uC", x->temp);
     break;
   }
-  case ENTRY_STOP: {
+  case ENTRY_TYPE_STOP: {
     snprintf(buf + time_sz, len - time_sz, " X");
     break;
   }
-  case ENTRY_BAGS: {
+  case ENTRY_TYPE_BAGS: {
     BagsEntry *x = (BagsEntry *)e;
     snprintf(buf + time_sz, len - time_sz, " +%u", x->count);
     break;
   }
-  case ENTRY_RESTOCK: {
+  case ENTRY_TYPE_RESTOCK: {
     RestockEntry *x = (RestockEntry *)e;
     snprintf(buf + time_sz, len - time_sz, " G%u", x->count);
     break;
   }
-  case ENTRY_CLEAN: {
+  case ENTRY_TYPE_CLEAN: {
     snprintf(buf + time_sz, len - time_sz, " P");
     break;
   }
   default:
     break;
+  }
+}
+
+void entry_init(BaseEntry *e) {
+  e->id = ++id;
+  e->time = 0;
+  e->state = ENTRY_STATE_INIT;
+  e->storetry = 0;
+}
+
+uint8_t entry_create(BaseEntry *ret, uint8_t *data, size_t size) {
+  if (size < ENTRY_HDR_LEN) {
+    ESP_LOGW(TAG, "entry to short, len: %d", size);
+    return ENTRY_TYPE_UNKNOWN;
+  }
+
+  BaseEntry base;
+  entry_init(&base);
+  base.type = data[0];
+  memcpy(&base.time, data + 1, sizeof(base.time));
+  base.storetry = 0;
+
+  switch (base.type) {
+  case ENTRY_TYPE_TEMP: {
+    if (size < ENTRY_HDR_LEN + 1)
+      return ENTRY_TYPE_UNKNOWN;
+    TempEntry *e = (TempEntry *)malloc((sizeof(TempEntry)));
+    e->b = base;
+    e->temp = data[5];
+    ret = (BaseEntry *)e;
+    break;
+  }
+  case ENTRY_TYPE_STOP: {
+    StopEntry *e = (StopEntry *)malloc((sizeof(StopEntry)));
+    e->b = base;
+    ret = (BaseEntry *)e;
+    break;
+  }
+  case ENTRY_TYPE_BAGS: {
+    if (size < ENTRY_HDR_LEN + 1)
+      return ENTRY_TYPE_UNKNOWN;
+    BagsEntry *e = (BagsEntry *)malloc((sizeof(BagsEntry)));
+    e->b = base;
+    e->count = data[5];
+    ret = (BaseEntry *)e;
+    break;
+  }
+  case ENTRY_TYPE_RESTOCK: {
+    if (size < ENTRY_HDR_LEN + 1)
+      return ENTRY_TYPE_UNKNOWN;
+    RestockEntry *e = (RestockEntry *)malloc((sizeof(RestockEntry)));
+    e->b = base;
+    e->count = data[5];
+    ret = (BaseEntry *)e;
+    break;
+  }
+  case ENTRY_TYPE_CLEAN: {
+    CleanEntry *e = (CleanEntry *)malloc((sizeof(CleanEntry)));
+    e->b = base;
+    ret = (BaseEntry *)e;
+    break;
+  }
+  default:
+    break;
+  }
+
+  char str[256];
+  entry_to_str(ret, str, sizeof(str));
+  ESP_LOGI(TAG, "entry created: %s", str);
+
+  return ret->type;
+}
+
+void entry_store(BaseEntry *e) {
+  ESP_LOGI(TAG, "entry_store: id %u, try %u", e->id, e->storetry + 1);
+  assert(e->state == ENTRY_STATE_INIT || e->state == ENTRY_STATE_STORING);
+
+  e->state = ENTRY_STATE_STORING;
+  ++e->storetry;
+  if (e->storetry == 3) {
+    ESP_LOGW(TAG, "entry %u store failed after 3 tries", e->id);
+    e->state = ENTRY_STATE_STORE_FAILED;
+    return;
+  }
+
+  char req[128];
+  char data[32];
+  char name[16];
+
+  if (e->type == ENTRY_TYPE_TEMP) {
+    snprintf(name, sizeof(name), "%s", "set-temp");
+    snprintf(data, sizeof(data), "{\"value\":%u}", ((TempEntry *)e)->temp);
+  } else if (e->type == ENTRY_TYPE_STOP) {
+    snprintf(name, sizeof(name), "%s", "off");
+    data[0] = '\0';
+  } else if (e->type == ENTRY_TYPE_BAGS) {
+    snprintf(name, sizeof(name), "%s", "add-bags");
+    snprintf(data, sizeof(data), "{\"value\":%u}", ((BagsEntry *)e)->count);
+  } else if (e->type == ENTRY_TYPE_RESTOCK) {
+    snprintf(name, sizeof(name), "%s", "restock");
+    snprintf(data, sizeof(data), "{\"value\":%u}", ((RestockEntry *)e)->count);
+  } else if (e->type == ENTRY_TYPE_CLEAN) {
+    snprintf(name, sizeof(name), "%s", "clean");
+    data[0] = '\0';
+  }
+
+  if (strlen(data)) {
+    snprintf(
+        req, sizeof(req),
+        "{\"id\":\"%u\",\"time\":\"%llu\"},\"event\":\"%s\",\"data\":\"%s\"}",
+        e->id, e->time, name, data);
+  } else {
+    snprintf(req, sizeof(req),
+             "{\"id\":\"%u\",\"time\":\"%llu\"},\"event\":\"%s\"}", e->id,
+             e->time, name);
+  }
+
+  ESP_LOGI(TAG, "req data len: %u", strlen(data));
+
+  char msg[256];
+  msg[0] = WIFI_HTTP_SEND;
+  memcpy(msg + 1, &e->id, sizeof(e->id));
+  strcpy(msg + 1 + sizeof(e->id), req);
+
+  if (xRingbufferSend(wifi_buf_handle, msg, sizeof(msg), 0) != pdTRUE) {
+    ESP_LOGE(TAG, "failed to send WIFI_HTTP_SEND msg");
+    entry_store(e);
+    return;
+  }
+}
+
+void entry_state_update(BaseEntry *e, EntryState s) {
+  if (e->state != ENTRY_STATE_STORING) {
+    ESP_LOGW(TAG, "state update not expected");
+    return;
+  }
+
+  if (s == ENTRY_STATE_STORED) {
+    ESP_LOGI(TAG, "entry %u stored succesfully", e->id);
+    e->state = s;
+    return;
+  }
+
+  if (s == ENTRY_STATE_STORE_FAILED) {
+    ESP_LOGI(TAG, "retry store entry %u", e->id);
+    entry_store(e);
   }
 }

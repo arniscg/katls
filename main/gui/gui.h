@@ -9,7 +9,6 @@
 typedef enum {
   GUI_EVT_BUTTON_PRESSED,
   GUI_EVT_WIFI_CHANGED,
-  GUI_EVT_HTTP_SEND_RESP,
 } GUIEvent;
 
 extern RingbufHandle_t gui_buf_handle;

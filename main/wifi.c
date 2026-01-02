@@ -37,12 +37,6 @@ static void notify_gui_changed() {
     ESP_LOGE(TAG, "failed to send wifi changed event");
 }
 
-static void notify_gui_http_resp(uint8_t reqid, uint8_t status) {
-  uint8_t msg[] = {GUI_EVT_HTTP_SEND_RESP, reqid, status};
-  if (xRingbufferSend(gui_buf_handle, msg, sizeof(msg), 0) != pdTRUE)
-    ESP_LOGE(TAG, "failed to send http send resp event");
-}
-
 void qrcode_draw_func(esp_qrcode_handle_t qrcode) {
   ESP_LOGI(TAG, "draw func");
   int size = esp_qrcode_get_size(qrcode);
@@ -226,69 +220,31 @@ static int http_post(char *data) {
   return err;
 }
 
-static void handle_send_entry(uint8_t reqid, uint8_t type, char *data,
-                              size_t size) {
+static void handle_send_entry(unsigned entry_id, char *data, size_t size) {
   ESP_LOGI(TAG, "handle_send_entry");
-  char postdata[256];
-  switch (type) {
-  case ENTRY_TEMP: {
-    if (size != 1) {
-      ESP_LOGE(TAG, "temperature entry invalid size");
-      return;
-    }
-    uint8_t v = (uint8_t)data[0];
-    snprintf(postdata, sizeof(postdata), "{\"value\": %u}", v);
-    break;
-  }
-  case ENTRY_BAGS: {
-    if (size != 1) {
-      ESP_LOGE(TAG, "add-bags entry invalid size");
-      return;
-    }
-    uint8_t v = (uint8_t)data[0];
-    snprintf(postdata, sizeof(postdata), "{\"value\": %u}", v);
-    break;
-  }
-  case ENTRY_CLEAN: {
-    if (size != 0) {
-      ESP_LOGE(TAG, "clean entry invalid size");
-      return;
-    }
-    postdata[0] = '\0';
-    break;
-  }
-  case ENTRY_RESTOCK: {
-    if (size != 1) {
-      ESP_LOGE(TAG, "restock entry invalid size");
-      return;
-    }
-    uint8_t v = (uint8_t)data[0];
-    snprintf(postdata, sizeof(postdata), "{\"value\": %u}", v);
-    break;
-  }
-  case ENTRY_STOP: {
-    if (size != 0) {
-      ESP_LOGE(TAG, "off entry invalid size");
-      return;
-    }
-    postdata[0] = '\0';
-    break;
-  }
-  default:
-    ESP_LOGE(TAG, "unhandled entry type %d", type);
+
+  auto ret = http_post(data);
+
+  assert(xSemaphoreTake(journal_mutex, portMAX_DELAY) == pdTRUE);
+
+  BaseEntry *e = journal_find_entry(entry_id);
+  if (!e) {
+    ESP_LOGE(TAG, "entry %u not found", entry_id);
+    assert(xSemaphoreGive(journal_mutex) == pdTRUE);
     return;
   }
 
-  if (http_post(postdata) == ESP_OK) {
+  if (ret == ESP_OK) {
     ESP_LOGI(TAG, "HTTP POST Status = %d, content_length = %" PRId64,
              esp_http_client_get_status_code(client),
              esp_http_client_get_content_length(client));
-    notify_gui_http_resp(reqid, 0);
+    entry_state_update(e, ENTRY_STATE_STORED);
   } else {
     ESP_LOGE(TAG, "HTTP POST request failed");
-    // ESP_LOGE(TAG, "HTTP POST request failed: %s", esp_err_to_name(err));
-    notify_gui_http_resp(reqid, 1);
+    entry_state_update(e, ENTRY_STATE_STORE_FAILED);
   }
+
+  assert(xSemaphoreGive(journal_mutex) == pdTRUE);
 }
 
 static void handle_msg(char *data, size_t size) {
@@ -302,21 +258,21 @@ static void handle_msg(char *data, size_t size) {
   ESP_LOGI(TAG, "handle msg %d", msg);
 
   if (msg == WIFI_HTTP_SEND) {
-    if (size < 3) {
+    if (size < 6) {
       ESP_LOGE(TAG, "http send msg too short");
       return;
     }
 
-    uint8_t reqid = (uint8_t)data[1];
-    uint8_t type = (uint8_t)data[2];
-    handle_send_entry(reqid, type, data + 3, size - 3);
+    unsigned id = 0;
+    memcpy(&id, data + 1, sizeof(id));
+    handle_send_entry(id, data + 1 + sizeof(id), size - 1 - sizeof(id));
   } else {
     ESP_LOGE(TAG, "unhandled msg %d", msg);
   }
 }
 
 void wifi_task(void *) {
-  wifi_buf_handle = xRingbufferCreate(128, RINGBUF_TYPE_NOSPLIT);
+  wifi_buf_handle = xRingbufferCreate(1024, RINGBUF_TYPE_NOSPLIT);
   assert(wifi_buf_handle != NULL);
 
   // Initialize NVS

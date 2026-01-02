@@ -31,23 +31,52 @@ static void update(InputScreen *s) {
     lv_label_set_text(s->lbl_prompt, "stop");
     lv_label_set_text(s->lbl_value, "pechka");
     break;
-  case SENDING:
-    lv_label_set_text(s->lbl_prompt, "sending...");
-    lv_label_set_text(s->lbl_value, "");
-    break;
-  case SENDING_FAILED:
-    lv_obj_set_style_bg_color(s->cont, lv_color_hex(0xFF0000), LV_PART_MAIN);
-    lv_label_set_text(s->lbl_prompt, "sending");
-    lv_label_set_text(s->lbl_value, "failed");
-    break;
-  case SENDING_SUCCESS:
+  case INPUT_JOURNAL_ADD:
     lv_obj_set_style_bg_color(s->cont, lv_color_hex(0x00FF00), LV_PART_MAIN);
-    lv_label_set_text(s->lbl_prompt, "sending");
-    lv_label_set_text(s->lbl_value, "success");
+    lv_label_set_text(s->lbl_prompt, "adding to");
+    lv_label_set_text(s->lbl_value, "journal ...");
     break;
   default:
     break;
   }
+}
+
+static BaseEntry *state_to_journal_entry(InputScreen *s) {
+  BaseEntry *be = NULL;
+
+  switch (s->state) {
+  case INPUT_TEMP: {
+    TempEntry *e = (TempEntry *)malloc(sizeof(TempEntry));
+    e->b.type = ENTRY_TYPE_TEMP;
+    e->temp = s->temp;
+    be = (BaseEntry *)e;
+    break;
+  }
+  case INPUT_BAGS: {
+    BagsEntry *e = (BagsEntry *)malloc(sizeof(BagsEntry));
+    e->b.type = ENTRY_TYPE_BAGS;
+    e->count = s->bags;
+    be = (BaseEntry *)e;
+    break;
+  }
+  case INPUT_CLEAN: {
+    CleanEntry *e = (CleanEntry *)malloc(sizeof(CleanEntry));
+    e->b.type = ENTRY_TYPE_CLEAN;
+    be = (BaseEntry *)e;
+    break;
+  }
+  case INPUT_STOP: {
+    StopEntry *e = (StopEntry *)malloc(sizeof(StopEntry));
+    e->b.type = ENTRY_TYPE_STOP;
+    be = (BaseEntry *)e;
+    break;
+  }
+  default:
+    break;
+  }
+
+  entry_init(be);
+  return be;
 }
 
 static InputScreen *x;
@@ -55,53 +84,6 @@ static void on_ok_done(TimerHandle_t) {
   ESP_LOGI(TAG, "on_ok_done");
   lv_obj_set_style_bg_color(x->cont, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
   screens_return();
-}
-
-static void on_send_timeout(TimerHandle_t) {
-  ESP_LOGI(TAG, "send timeout");
-  TimerCallbackFunction_t cb = &on_ok_done;
-  x->timer = xTimerCreate("ok_cancel_timer", pdMS_TO_TICKS(1000), pdFALSE,
-                          (void *)0, cb);
-  if (x->timer == NULL) {
-    ESP_LOGE(TAG, "failed to create timer");
-    on_ok_done(x->timer);
-  }
-  assert(xTimerStart(x->timer, 0) == pdTRUE);
-  x->state = SENDING_FAILED;
-  update(x);
-}
-
-static void wifi_send(InputScreen *s) {
-  ++s->reqid;
-
-  switch (s->state) {
-  case INPUT_TEMP: {
-    uint8_t msg[] = {WIFI_HTTP_SEND, s->reqid, ENTRY_TEMP, s->temp};
-    if (xRingbufferSend(wifi_buf_handle, msg, sizeof(msg), 0) != pdTRUE)
-      ESP_LOGE(TAG, "failed to send wifi req");
-    break;
-  }
-  case INPUT_BAGS: {
-    uint8_t msg[] = {WIFI_HTTP_SEND, s->reqid, ENTRY_BAGS, s->bags};
-    if (xRingbufferSend(wifi_buf_handle, msg, sizeof(msg), 0) != pdTRUE)
-      ESP_LOGE(TAG, "failed to send wifi req");
-    break;
-  }
-  case INPUT_CLEAN: {
-    uint8_t msg[] = {WIFI_HTTP_SEND, s->reqid, ENTRY_CLEAN};
-    if (xRingbufferSend(wifi_buf_handle, msg, sizeof(msg), 0) != pdTRUE)
-      ESP_LOGE(TAG, "failed to send wifi req");
-    break;
-  }
-  case INPUT_STOP: {
-    uint8_t msg[] = {WIFI_HTTP_SEND, s->reqid, ENTRY_STOP};
-    if (xRingbufferSend(wifi_buf_handle, msg, sizeof(msg), 0) != pdTRUE)
-      ESP_LOGE(TAG, "failed to send wifi req");
-    break;
-  }
-  default:
-    break;
-  }
 }
 
 static void on_button(InputScreen *s, uint8_t but) {
@@ -140,12 +122,15 @@ static void on_button(InputScreen *s, uint8_t but) {
     if (s->bags > 1)
       s->bags--;
     break;
-  case BUTTON_OK:
-    wifi_send(s);
-    s->state = SENDING;
+  case BUTTON_OK: {
+    BaseEntry *e = state_to_journal_entry(s);
+    assert(xSemaphoreTake(journal_mutex, portMAX_DELAY) == pdTRUE);
+    assert(journal_add(e));
+    assert(xSemaphoreGive(journal_mutex) == pdTRUE);
+    s->state = INPUT_JOURNAL_ADD;
     x = s;
-    TimerCallbackFunction_t cb = &on_send_timeout;
-    s->timer = xTimerCreate("ok_cancel_timer", pdMS_TO_TICKS(5000), pdFALSE,
+    TimerCallbackFunction_t cb = &on_ok_done;
+    s->timer = xTimerCreate("ok_cancel_timer", pdMS_TO_TICKS(1000), pdFALSE,
                             (void *)0, cb);
     if (s->timer == NULL) {
       ESP_LOGE(TAG, "failed to create timer");
@@ -153,35 +138,12 @@ static void on_button(InputScreen *s, uint8_t but) {
       return;
     }
     assert(xTimerStart(s->timer, 0) == pdTRUE);
+    break;
+  }
   default:
     break;
   }
 
-  update(s);
-}
-
-static void on_http_resp(InputScreen *s, uint8_t id, uint8_t status) {
-  if (s->state != SENDING) {
-    ESP_LOGI(TAG, "http resp received when state != SENDING");
-    return;
-  }
-  if (s->reqid != id) {
-    ESP_LOGE(TAG, "received response for non-current reqid %d, curre: %d", id,
-             s->reqid);
-    return;
-  }
-  assert(xTimerDelete(s->timer, 0) != pdFAIL);
-
-  TimerCallbackFunction_t cb = &on_ok_done;
-  x->timer = xTimerCreate("ok_cancel_timer", pdMS_TO_TICKS(1000), pdFALSE,
-                          (void *)0, cb);
-  if (x->timer == NULL) {
-    ESP_LOGE(TAG, "failed to create timer");
-    on_ok_done(x->timer);
-  }
-  assert(xTimerStart(s->timer, 0) == pdTRUE);
-
-  s->state = status == 0 ? SENDING_SUCCESS : SENDING_FAILED;
   update(s);
 }
 
@@ -194,10 +156,6 @@ static void handle_event(BaseScreen *s, GUIEvent event, uint8_t *data,
     assert(size == 1);
     uint8_t b = data[0];
     on_button((InputScreen *)s, b);
-    break;
-  case GUI_EVT_HTTP_SEND_RESP:
-    assert(size == 2);
-    on_http_resp((InputScreen *)s, data[0], data[1]);
     break;
   default:
     break;
@@ -222,6 +180,4 @@ void screen_input_init(InputScreen *s) {
 
   s->lbl_prompt = lv_label_create(s->cont);
   s->lbl_value = lv_label_create(s->cont);
-
-  s->reqid = 0;
 }
