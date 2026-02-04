@@ -201,16 +201,16 @@ void entry_store(BaseEntry *e) {
 
   if (e->type == ENTRY_TYPE_TEMP) {
     snprintf(name, sizeof(name), "%s", "set-temp");
-    snprintf(data, sizeof(data), "{\"value\":%u}", ((TempEntry *)e)->temp);
+    snprintf(data, sizeof(data), "{\\\"value\\\":%u}", ((TempEntry *)e)->temp);
   } else if (e->type == ENTRY_TYPE_STOP) {
     snprintf(name, sizeof(name), "%s", "off");
     data[0] = '\0';
   } else if (e->type == ENTRY_TYPE_BAGS) {
     snprintf(name, sizeof(name), "%s", "add-bags");
-    snprintf(data, sizeof(data), "{\"value\":%u}", ((BagsEntry *)e)->count);
+    snprintf(data, sizeof(data), "{\\\"value\\\":%u}", ((BagsEntry *)e)->count);
   } else if (e->type == ENTRY_TYPE_RESTOCK) {
     snprintf(name, sizeof(name), "%s", "restock");
-    snprintf(data, sizeof(data), "{\"value\":%u}", ((RestockEntry *)e)->count);
+    snprintf(data, sizeof(data), "{\\\"value\\\":%u}", ((RestockEntry *)e)->count);
   } else if (e->type == ENTRY_TYPE_CLEAN) {
     snprintf(name, sizeof(name), "%s", "clean");
     data[0] = '\0';
@@ -219,11 +219,11 @@ void entry_store(BaseEntry *e) {
   if (strlen(data)) {
     snprintf(
         req, sizeof(req),
-        "{\"id\":\"%u\",\"time\":\"%llu\"},\"event\":\"%s\",\"data\":\"%s\"}",
+        "{\"id\":\"%u\",\"time\":%llu,\"event\":\"%s\",\"data\":\"%s\"}",
         e->id, e->time, name, data);
   } else {
     snprintf(req, sizeof(req),
-             "{\"id\":\"%u\",\"time\":\"%llu\"},\"event\":\"%s\"}", e->id,
+             "{\"id\":\"%u\",\"time\":%llu,\"event\":\"%s\"}", e->id,
              e->time, name);
   }
 

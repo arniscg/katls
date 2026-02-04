@@ -12,6 +12,8 @@
 #include "qrcode.h"
 #include "state.h"
 
+#define MIN(a, b) ((a) < (b) ? (a) : (b))
+
 static const char *TAG = "wifi";
 
 wifi_config_t s_dpp_wifi_config;
@@ -29,7 +31,7 @@ static EventGroupHandle_t s_dpp_event_group;
 #define DPP_CONNECT_FAIL_BIT BIT1
 #define DPP_AUTH_FAIL_BIT BIT2
 #define WIFI_MAX_RETRY_NUM 3
-#define URL "http://192.168.8.TODO:8000"
+#define HOSTNAME "rpi5.home.lan"
 
 static void notify_gui_changed() {
   uint8_t msg[] = {GUI_EVT_WIFI_CHANGED};
@@ -203,11 +205,73 @@ static void dpp_enrollee_init() {
   vEventGroupDelete(s_dpp_event_group);
 }
 
+static esp_err_t http_event_handler(esp_http_client_event_t *evt) {
+  static char *output_buffer; // Buffer to store response of http request from
+                              // event handler
+  static int output_len;      // Stores number of bytes read
+  if (evt->event_id == HTTP_EVENT_ON_DATA) {
+    if (output_len == 0 && evt->user_data) {
+      // we are just starting to copy the output data into the use
+      memset(evt->user_data, 0, 512);
+    }
+    /*
+     *  Check for chunked encoding is added as the URL for chunked encoding used
+     * in this example returns binary data. However, event handler can also be
+     * used in case chunked encoding is used.
+     */
+    if (!esp_http_client_is_chunked_response(evt->client)) {
+      // If user_data buffer is configured, copy the response into the buffer
+      int copy_len = 0;
+      if (evt->user_data) {
+        // The last byte in evt->user_data is kept for the NULL character in
+        // case of out-of-bound access.
+        copy_len = MIN(evt->data_len, (512 - output_len));
+        if (copy_len) {
+          memcpy(evt->user_data + output_len, evt->data, copy_len);
+        }
+      } else {
+        int content_len = esp_http_client_get_content_length(evt->client);
+        if (output_buffer == NULL) {
+          // We initialize output_buffer with 0 because it is used by strlen()
+          // and similar functions therefore should be null terminated.
+          output_buffer = (char *)calloc(content_len + 1, sizeof(char));
+          output_len = 0;
+          if (output_buffer == NULL) {
+            ESP_LOGE(TAG, "Failed to allocate memory for output buffer");
+            return ESP_FAIL;
+          }
+        }
+        copy_len = MIN(evt->data_len, (content_len - output_len));
+        if (copy_len) {
+          memcpy(output_buffer + output_len, evt->data, copy_len);
+        }
+      }
+      output_len += copy_len;
+    }
+  } else if (evt->event_id == HTTP_EVENT_ON_FINISH) {
+    if (output_buffer != NULL) {
+      ESP_LOGI(TAG, "resp: %s", output_buffer);
+      ESP_LOG_BUFFER_HEX(TAG, output_buffer, output_len);
+      free(output_buffer);
+      output_buffer = NULL;
+    }
+    output_len = 0;
+  } else if (evt->event_id == HTTP_EVENT_DISCONNECTED) {
+    if (output_buffer != NULL) {
+      free(output_buffer);
+      output_buffer = NULL;
+    }
+    output_len = 0;
+  }
+  return ESP_OK;
+}
+
 static int http_post(char *data) {
-  esp_http_client_config_t config = {
-      .host = URL,
-      .path = "/events",
-  };
+  esp_http_client_config_t config = {.host = HOSTNAME,
+                                     .path = "/events",
+                                     .port = 8000,
+                                     .event_handler = http_event_handler};
+  ESP_LOGI(TAG, "post data: %s", data);
   size_t len = strlen(data);
   client = esp_http_client_init(&config);
   esp_http_client_set_method(client, HTTP_METHOD_POST);
@@ -223,7 +287,7 @@ static int http_post(char *data) {
 static void handle_send_entry(unsigned entry_id, char *data, size_t size) {
   ESP_LOGI(TAG, "handle_send_entry");
 
-  auto ret = http_post(data);
+  int ret = http_post(data);
 
   assert(xSemaphoreTake(journal_mutex, portMAX_DELAY) == pdTRUE);
 
@@ -235,10 +299,17 @@ static void handle_send_entry(unsigned entry_id, char *data, size_t size) {
   }
 
   if (ret == ESP_OK) {
-    ESP_LOGI(TAG, "HTTP POST Status = %d, content_length = %" PRId64,
-             esp_http_client_get_status_code(client),
-             esp_http_client_get_content_length(client));
-    entry_state_update(e, ENTRY_STATE_STORED);
+    int status = esp_http_client_get_status_code(client);
+    int64_t len = esp_http_client_get_content_length(client);
+
+    ESP_LOGI(TAG, "HTTP POST Status = %d, content_length = %" PRId64, status,
+             len);
+    if (status == 200 || status == 201) {
+      ESP_LOGI(TAG, "store success %u", entry_id);
+      entry_state_update(e, ENTRY_STATE_STORED);
+    } else {
+      ESP_LOGI(TAG, "store failed %u", entry_id);
+    }
   } else {
     ESP_LOGE(TAG, "HTTP POST request failed");
     entry_state_update(e, ENTRY_STATE_STORE_FAILED);
