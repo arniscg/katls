@@ -119,6 +119,7 @@ static void handle_event(BaseScreen *s, GUIEvent event, uint8_t *data,
 void screen_wifi_init(WifiScreen *s) {
   s->base.type = SCREEN_WIFI;
   s->base.on_event = &handle_event;
+  s->base.on_load = NULL;
 
   s->base.root = lv_obj_create(NULL);
   lv_obj_set_size(s->base.root, TFT_H_RES, TFT_V_RES);

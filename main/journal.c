@@ -1,5 +1,6 @@
 #include "journal.h"
 #include "./wifi.h"
+#include "common.h"
 #include "esp_err.h"
 #include "esp_log.h"
 #include "esp_vfs.h"
@@ -9,7 +10,6 @@
 #include <string.h>
 
 #define ENTRY_HDR_LEN 5
-#define JOURNAL_SIZE 16
 
 SemaphoreHandle_t journal_mutex;
 
@@ -18,7 +18,8 @@ static const char *TAG = "journal";
 typedef struct {
   BaseEntry *entries[JOURNAL_SIZE];
   unsigned currsize;
-  unsigned idx;
+  unsigned tail;
+  unsigned head;
 } Journal;
 static bool initdone = false;
 static unsigned id = 0;
@@ -32,18 +33,20 @@ void journal_init() {
   journal_mutex = xSemaphoreCreateMutex();
   initdone = true;
   j.currsize = 0;
-  j.idx = 0;
+  j.tail = 0;
+  j.head = JOURNAL_SIZE - 1;
 
   for (unsigned i = 0; i < JOURNAL_SIZE; ++i)
     j.entries[i] = NULL;
 }
 
-unsigned journal_idx_next() {
-  return j.idx == JOURNAL_SIZE - 1 ? 0 : j.idx + 1;
+static unsigned idx_next(unsigned i) {
+  return i == JOURNAL_SIZE - 1 ? 0 : i + 1;
 }
 
 bool journal_add(BaseEntry *e) {
-  unsigned nextidx = journal_idx_next();
+  e->time = time(NULL);
+  unsigned nextidx = idx_next(j.head);
 
   if (j.currsize == JOURNAL_SIZE) {
     // remove oldest
@@ -58,13 +61,17 @@ bool journal_add(BaseEntry *e) {
     free(del);
     j.entries[nextidx] = NULL;
     --j.currsize;
+    j.tail = idx_next(j.tail);
   }
 
   assert(j.entries[nextidx] == NULL);
   j.entries[nextidx] = e;
-  j.idx = nextidx;
+  j.head = nextidx;
+  ++j.currsize;
 
-  ESP_LOGI(TAG, "entry added");
+  ESP_LOGI(TAG, "entry added, tail=%u head=%u size=%u", j.tail, j.head,
+           j.currsize);
+
   entry_store(e);
   return true;
 }
@@ -80,9 +87,21 @@ BaseEntry *journal_find_entry(unsigned id) {
   return NULL;
 }
 
+unsigned journal_get(BaseEntry **arr, unsigned cnt) {
+  unsigned n = cnt > j.currsize ? j.currsize : cnt;
+
+  unsigned idx = j.tail;
+  for (unsigned i = 0; i < n; ++i) {
+    ESP_LOGI(TAG, "journal_get: insert %u", idx);
+    arr[i] = j.entries[idx];
+    idx = idx_next(idx);
+  }
+
+  return n;
+}
+
 void entry_to_str(BaseEntry *e, char *buf, size_t len) {
-  struct tm *t = localtime((time_t *)&e->time);
-  size_t time_sz = strftime(buf, len, "%d.%m.%Y %H:%M", t);
+  size_t time_sz = timeStr((time_t *)&e->time, buf, len, true);
 
   switch (e->type) {
   case ENTRY_TYPE_TEMP: {
@@ -210,21 +229,20 @@ void entry_store(BaseEntry *e) {
     snprintf(data, sizeof(data), "{\\\"value\\\":%u}", ((BagsEntry *)e)->count);
   } else if (e->type == ENTRY_TYPE_RESTOCK) {
     snprintf(name, sizeof(name), "%s", "restock");
-    snprintf(data, sizeof(data), "{\\\"value\\\":%u}", ((RestockEntry *)e)->count);
+    snprintf(data, sizeof(data), "{\\\"value\\\":%u}",
+             ((RestockEntry *)e)->count);
   } else if (e->type == ENTRY_TYPE_CLEAN) {
     snprintf(name, sizeof(name), "%s", "clean");
     data[0] = '\0';
   }
 
   if (strlen(data)) {
-    snprintf(
-        req, sizeof(req),
-        "{\"id\":\"%u\",\"time\":%llu,\"event\":\"%s\",\"data\":\"%s\"}",
-        e->id, e->time, name, data);
-  } else {
     snprintf(req, sizeof(req),
-             "{\"id\":\"%u\",\"time\":%llu,\"event\":\"%s\"}", e->id,
-             e->time, name);
+             "{\"id\":\"%u\",\"time\":%llu,\"event\":\"%s\",\"data\":\"%s\"}",
+             e->id, e->time, name, data);
+  } else {
+    snprintf(req, sizeof(req), "{\"id\":\"%u\",\"time\":%llu,\"event\":\"%s\"}",
+             e->id, e->time, name);
   }
 
   ESP_LOGI(TAG, "req data len: %u", strlen(data));

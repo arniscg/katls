@@ -1,6 +1,7 @@
 #pragma once
 
 #include "base.h"
+#include "esp_timer.h"
 
 typedef struct {
   BaseScreen base;
@@ -19,7 +20,7 @@ typedef struct {
 
   int temp;
   int bags;
-  TimerHandle_t timer;
+  esp_timer_handle_t timer;
 } InputScreen;
 
 void screen_input_init(InputScreen *s);

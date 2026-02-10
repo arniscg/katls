@@ -12,6 +12,8 @@
 #define ENTRY_TYPE_RESTOCK 4
 #define ENTRY_TYPE_CLEAN 5
 
+#define JOURNAL_SIZE 16
+
 extern SemaphoreHandle_t journal_mutex;
 
 typedef enum {
@@ -57,6 +59,7 @@ typedef struct {
 void journal_init();
 bool journal_add(BaseEntry *);
 BaseEntry *journal_find_entry(unsigned);
+unsigned journal_get(BaseEntry **, unsigned);
 
 void entry_to_str(BaseEntry *, char *, size_t);
 void entry_init(BaseEntry *);

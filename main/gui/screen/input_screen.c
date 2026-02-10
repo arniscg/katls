@@ -79,10 +79,11 @@ static BaseEntry *state_to_journal_entry(InputScreen *s) {
   return be;
 }
 
-static InputScreen *x;
-static void on_ok_done(TimerHandle_t) {
+static void on_ok_done(void *scr) {
   ESP_LOGI(TAG, "on_ok_done");
-  lv_obj_set_style_bg_color(x->cont, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
+  InputScreen *s = (InputScreen *)scr;
+  ESP_ERROR_CHECK(esp_timer_delete(s->timer));
+  lv_obj_set_style_bg_color(s->cont, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
   screens_return();
 }
 
@@ -128,16 +129,13 @@ static void on_button(InputScreen *s, uint8_t but) {
     assert(journal_add(e));
     assert(xSemaphoreGive(journal_mutex) == pdTRUE);
     s->state = INPUT_JOURNAL_ADD;
-    x = s;
-    TimerCallbackFunction_t cb = &on_ok_done;
-    s->timer = xTimerCreate("ok_cancel_timer", pdMS_TO_TICKS(1000), pdFALSE,
-                            (void *)0, cb);
-    if (s->timer == NULL) {
-      ESP_LOGE(TAG, "failed to create timer");
-      on_ok_done(s->timer);
-      return;
-    }
-    assert(xTimerStart(s->timer, 0) == pdTRUE);
+    esp_timer_create_args_t timer_args = {
+        .callback = &on_ok_done,
+        .arg = (void *)s,
+        .name = "add-timer",
+    };
+    ESP_ERROR_CHECK(esp_timer_create(&timer_args, &s->timer));
+    ESP_ERROR_CHECK(esp_timer_start_once(s->timer, 1000000));
     break;
   }
   default:
@@ -167,6 +165,7 @@ void screen_input_init(InputScreen *s) {
   s->base.root = lv_obj_create(NULL);
   s->base.type = SCREEN_INPUT;
   s->base.on_event = &handle_event;
+  s->base.on_load = NULL;
 
   s->cont = lv_obj_create(s->base.root);
   lv_obj_set_size(s->cont, LV_PCT(100), LV_PCT(100));

@@ -1,8 +1,10 @@
 #include "wifi.h"
+#include "common.h"
 #include "esp_dpp.h"
 #include "esp_err.h"
 #include "esp_http_client.h"
 #include "esp_log.h"
+#include "esp_netif_sntp.h"
 #include "esp_wifi.h"
 #include "freertos/event_groups.h"
 #include "freertos/ringbuf.h"
@@ -197,6 +199,8 @@ static void dpp_enrollee_init() {
     ESP_LOGE(TAG, "UNEXPECTED EVENT");
   }
 
+  // TODO: reconnect logic
+
   esp_supp_dpp_deinit();
   ESP_ERROR_CHECK(esp_event_handler_unregister(IP_EVENT, IP_EVENT_STA_GOT_IP,
                                                &event_handler));
@@ -319,7 +323,6 @@ static void handle_send_entry(unsigned entry_id, char *data, size_t size) {
 }
 
 static void handle_msg(char *data, size_t size) {
-
   if (size < 1) {
     ESP_LOGE(TAG, "msg too short");
     return;
@@ -355,6 +358,17 @@ void wifi_task(void *) {
   }
   ESP_ERROR_CHECK(ret);
   dpp_enrollee_init();
+
+  esp_sntp_config_t config = ESP_NETIF_SNTP_DEFAULT_CONFIG("pool.ntp.org");
+  esp_netif_sntp_init(&config);
+
+  if (esp_netif_sntp_sync_wait(pdMS_TO_TICKS(10000)) != ESP_OK)
+    ESP_LOGE(TAG, "failed to update system time within 10s timeout");
+
+  time_t t = time(NULL);
+  char timestr[64];
+  timeStr(&t, timestr, sizeof(timestr), false);
+  ESP_LOGI(TAG, "current time: %s", timestr);
 
   size_t item_size;
   char *item = NULL;
