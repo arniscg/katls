@@ -8,9 +8,10 @@
 
 typedef enum {
   WIFI_STATUS_INIT,
-  WIFI_STATUS_WAITING_SCAN,
+  WIFI_STATUS_DPP_WAITING,
   WIFI_STATUS_CONNECTING,
   WIFI_STATUS_CONNECTED,
+  WIFI_STATUS_FAILED,
 } WifiStatus;
 
 typedef struct {
@@ -24,6 +25,7 @@ typedef struct {
   Img qrcode;
   wifi_sta_config_t conf;
   esp_ip4_addr_t ip;
+  bool ntp_sync;
 } WifiState;
 
 typedef struct {

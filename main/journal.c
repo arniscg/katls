@@ -5,6 +5,7 @@
 #include "esp_log.h"
 #include "esp_vfs.h"
 #include "esp_vfs_fat.h"
+#include "gui/gui.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -44,6 +45,12 @@ static unsigned idx_next(unsigned i) {
   return i == JOURNAL_SIZE - 1 ? 0 : i + 1;
 }
 
+static void notify_gui_changed() {
+  uint8_t msg[] = {GUI_EVT_JOURNAL_CHANGED};
+  if (xRingbufferSend(gui_buf_handle, msg, sizeof(msg), 0) != pdTRUE)
+    ESP_LOGE(TAG, "failed to send journal changed event");
+}
+
 bool journal_add(BaseEntry *e) {
   e->time = time(NULL);
   unsigned nextidx = idx_next(j.head);
@@ -54,7 +61,7 @@ bool journal_add(BaseEntry *e) {
     assert(del != NULL);
 
     if (del->state != ENTRY_STATE_STORED) {
-      ESP_LOGE(TAG, "cannot free journal space, oldest entry not stored");
+      ESP_LOGW(TAG, "cannot free journal space, oldest entry not stored");
       return false;
     }
 
@@ -211,6 +218,7 @@ void entry_store(BaseEntry *e) {
   if (e->storetry == 3) {
     ESP_LOGW(TAG, "entry %u store failed after 3 tries", e->id);
     e->state = ENTRY_STATE_STORE_FAILED;
+    notify_gui_changed();
     return;
   }
 
@@ -262,12 +270,14 @@ void entry_store(BaseEntry *e) {
 void entry_state_update(BaseEntry *e, EntryState s) {
   if (e->state != ENTRY_STATE_STORING) {
     ESP_LOGW(TAG, "state update not expected");
+    notify_gui_changed();
     return;
   }
 
   if (s == ENTRY_STATE_STORED) {
     ESP_LOGI(TAG, "entry %u stored succesfully", e->id);
     e->state = s;
+    notify_gui_changed();
     return;
   }
 

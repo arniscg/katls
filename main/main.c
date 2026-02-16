@@ -23,6 +23,7 @@
 #include <string.h>
 #include <sys/lock.h>
 #include <sys/param.h>
+#include <time.h>
 #include <unistd.h>
 
 #define GUI_TASK_STACK_SIZE (4 * 1024)
@@ -35,6 +36,10 @@ static const char *TAG = "main";
 
 void app_main(void) {
   ESP_LOGI(TAG, "app_main");
+
+  setenv("TZ", "UTC-2", 1);
+  tzset();
+
   journal_init();
   state_init();
   buttons_init();

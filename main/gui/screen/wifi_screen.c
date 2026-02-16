@@ -1,4 +1,5 @@
 #include "wifi_screen.h"
+#include "../../common.h"
 #include "../../state.h"
 #include "../gui.h"
 #include <esp_log.h>
@@ -48,6 +49,7 @@ static void fill_qr(WifiScreen *s, Img *qr) {
 }
 
 static void update(WifiScreen *s) {
+  ESP_LOGI(TAG, "update");
   assert(xSemaphoreTake(state_mutex, portMAX_DELAY) == pdTRUE);
 
   if (s->lbl_state) {
@@ -62,6 +64,10 @@ static void update(WifiScreen *s) {
     lv_obj_delete(s->lbl_ip);
     s->lbl_ip = NULL;
   }
+  if (s->lbl_time) {
+    lv_obj_delete(s->lbl_time);
+    s->lbl_time = NULL;
+  }
   if (s->qrcode) {
     lv_obj_delete(s->qrcode);
     s->qrcode = NULL;
@@ -73,7 +79,7 @@ static void update(WifiScreen *s) {
       s->lbl_state = lv_label_create(s->cont);
     lv_label_set_text(s->lbl_state, "Initializing");
     break;
-  case WIFI_STATUS_WAITING_SCAN:
+  case WIFI_STATUS_DPP_WAITING:
     assert(state.wifi.qrcode.data);
     fill_qr(s, &state.wifi.qrcode);
     break;
@@ -99,11 +105,30 @@ static void update(WifiScreen *s) {
     lv_snprintf(ipstr, sizeof(ipstr), IPSTR, IP2STR(&state.wifi.ip));
     lv_label_set_text(s->lbl_ip, ipstr);
     break;
+  case WIFI_STATUS_FAILED:
+    if (!s->lbl_state)
+      s->lbl_state = lv_label_create(s->cont);
+    lv_label_set_text(s->lbl_state, "Failed");
+    break;
   default:
     break;
   }
 
+  if (state.wifi.ntp_sync) {
+    time_t t = time(NULL);
+    char timestr[64];
+    timeStr(&t, timestr, sizeof(timestr), false);
+    if (!s->lbl_time)
+      s->lbl_time = lv_label_create(s->cont);
+    lv_label_set_text(s->lbl_time, timestr);
+  }
+
   assert(xSemaphoreGive(state_mutex) == pdTRUE);
+}
+
+static void timer_update(lv_timer_t *t) {
+  WifiScreen *s = (WifiScreen *)lv_timer_get_user_data(t);
+  update(s);
 }
 
 static void handle_event(BaseScreen *s, GUIEvent event, uint8_t *data,
@@ -116,10 +141,22 @@ static void handle_event(BaseScreen *s, GUIEvent event, uint8_t *data,
   ESP_LOGI(TAG, "unhandled event %u", (unsigned)event);
 }
 
+static void on_load(BaseScreen *s) {
+  update((WifiScreen *)s);
+  // ESP_LOGI(TAG, "resume timer");
+  // lv_timer_resume(((WifiScreen *)s)->timer);
+}
+
+static void on_unload(BaseScreen *s) {
+  // ESP_LOGI(TAG, "pause timer");
+  // lv_timer_pause(((WifiScreen *)s)->timer);
+}
+
 void screen_wifi_init(WifiScreen *s) {
   s->base.type = SCREEN_WIFI;
   s->base.on_event = &handle_event;
-  s->base.on_load = NULL;
+  s->base.on_load = &on_load;
+  s->base.on_unload = &on_unload;
 
   s->base.root = lv_obj_create(NULL);
   lv_obj_set_size(s->base.root, TFT_H_RES, TFT_V_RES);
@@ -136,9 +173,12 @@ void screen_wifi_init(WifiScreen *s) {
   s->lbl_state = NULL;
   s->lbl_ssid = NULL;
   s->lbl_ip = NULL;
+  s->lbl_time = NULL;
   s->qrcode = NULL;
   s->rgb = NULL;
   lv_memset(&s->dsc, 0, sizeof(s->dsc));
 
-  update(s);
+  // TODO: this timer makes everything slow
+  // s->timer = lv_timer_create(&timer_update, 5000, (void *)s);
+  // lv_timer_pause(s->timer);
 }

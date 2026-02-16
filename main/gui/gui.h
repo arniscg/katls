@@ -9,6 +9,7 @@
 typedef enum {
   GUI_EVT_BUTTON_PRESSED,
   GUI_EVT_WIFI_CHANGED,
+  GUI_EVT_JOURNAL_CHANGED,
 } GUIEvent;
 
 extern RingbufHandle_t gui_buf_handle;

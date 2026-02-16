@@ -10,4 +10,5 @@ void state_init() {
   memset(&state.wifi.qrcode, 0, sizeof(state.wifi.qrcode));
   memset(&state.wifi.conf, 0, sizeof(state.wifi.conf));
   state.wifi.ip.addr = 0;
+  state.wifi.ntp_sync = false;
 }

@@ -12,7 +12,7 @@
 #define ENTRY_TYPE_RESTOCK 4
 #define ENTRY_TYPE_CLEAN 5
 
-#define JOURNAL_SIZE 16
+#define JOURNAL_SIZE 8
 
 extern SemaphoreHandle_t journal_mutex;
 

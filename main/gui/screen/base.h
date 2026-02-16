@@ -18,4 +18,5 @@ struct BaseScreen {
   lv_obj_t *root;
   ScreenEventCb on_event;
   OnScreenLoadCb on_load;
+  OnScreenLoadCb on_unload;
 };

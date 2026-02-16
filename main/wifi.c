@@ -18,21 +18,18 @@
 
 static const char *TAG = "wifi";
 
-wifi_config_t s_dpp_wifi_config;
+wifi_config_t wifi_config;
 
 RingbufHandle_t wifi_buf_handle;
+static EventGroupHandle_t wifi_event_group;
 
-static int s_retry_num = 0;
+static int retry_num = 0;
 
 static esp_http_client_handle_t client = NULL;
 
-/* FreeRTOS event group to signal when we are connected*/
-static EventGroupHandle_t s_dpp_event_group;
-
-#define DPP_CONNECTED_BIT BIT0
-#define DPP_CONNECT_FAIL_BIT BIT1
-#define DPP_AUTH_FAIL_BIT BIT2
-#define WIFI_MAX_RETRY_NUM 3
+#define WIFI_CONNECTED_BIT BIT0
+#define WIFI_FAIL_BIT BIT1
+#define WIFI_MAX_RETRY_NUM 5
 #define HOSTNAME "rpi5.home.lan"
 
 static void notify_gui_changed() {
@@ -59,7 +56,7 @@ void qrcode_draw_func(esp_qrcode_handle_t qrcode) {
   assert(i == size_b * size_b);
 
   assert(xSemaphoreTake(state_mutex, portMAX_DELAY) == pdTRUE);
-  state.wifi.status = WIFI_STATUS_WAITING_SCAN;
+  state.wifi.status = WIFI_STATUS_DPP_WAITING;
   if (state.wifi.qrcode.data)
     free(state.wifi.qrcode.data);
   state.wifi.qrcode.data = buf;
@@ -74,31 +71,45 @@ static void event_handler(void *arg, esp_event_base_t event_base,
   if (event_base == WIFI_EVENT) {
     switch (event_id) {
     case WIFI_EVENT_STA_START:
+      ESP_LOGI(TAG, "WIFI_EVENT_STA_START");
+      assert(xSemaphoreTake(state_mutex, portMAX_DELAY) == pdTRUE);
+#if CONFIG_WIFI_USE_DPP
+      state.wifi.status = WIFI_STATUS_INIT;
       ESP_ERROR_CHECK(esp_supp_dpp_start_listen());
       ESP_LOGI(TAG, "Started listening for DPP Authentication");
-
-      assert(xSemaphoreTake(state_mutex, portMAX_DELAY) == pdTRUE);
+#else
+      state.wifi.status = WIFI_STATUS_CONNECTING;
+      esp_wifi_connect();
+#endif
       state.wifi.ip.addr = 0;
       assert(xSemaphoreGive(state_mutex) == pdTRUE);
       break;
     case WIFI_EVENT_STA_DISCONNECTED:
-      if (s_retry_num < WIFI_MAX_RETRY_NUM) {
+      ESP_LOGI(TAG, "WIFI_EVENT_STA_DISCONNECTED");
+      assert(xSemaphoreTake(state_mutex, portMAX_DELAY) == pdTRUE);
+
+      if (retry_num < WIFI_MAX_RETRY_NUM) {
         esp_wifi_connect();
-        s_retry_num++;
-        ESP_LOGI(TAG, "Disconnect event, retry to connect to the AP");
+        retry_num++;
+        ESP_LOGI(TAG, "disconnect event, retry to connect to the AP");
+        state.wifi.status = WIFI_STATUS_CONNECTING;
       } else {
-        xEventGroupSetBits(s_dpp_event_group, DPP_CONNECT_FAIL_BIT);
+        ESP_LOGE(TAG, "not connected after max retries");
+        state.wifi.status = WIFI_STATUS_FAILED;
+        xEventGroupSetBits(wifi_event_group, WIFI_FAIL_BIT);
       }
 
-      assert(xSemaphoreTake(state_mutex, portMAX_DELAY) == pdTRUE);
-      state.wifi.status = WIFI_STATUS_WAITING_SCAN;
       assert(xSemaphoreGive(state_mutex) == pdTRUE);
       notify_gui_changed();
       break;
     case WIFI_EVENT_STA_CONNECTED:
-      ESP_LOGI(TAG, "Successfully connected to the AP ssid : %s ",
-               s_dpp_wifi_config.sta.ssid);
+      ESP_LOGI(TAG, "successfully connected to the AP ssid : %s ",
+               wifi_config.sta.ssid);
       break;
+    case WIFI_EVENT_SCAN_DONE:
+      ESP_LOGI(TAG, "scan done");
+      break;
+#if CONFIG_WIFI_USE_DPP
     case WIFI_EVENT_DPP_URI_READY:
       wifi_event_dpp_uri_ready_t *uri_data = event_data;
       if (uri_data != NULL) {
@@ -109,35 +120,37 @@ static void event_handler(void *arg, esp_event_base_t event_base,
       break;
     case WIFI_EVENT_DPP_CFG_RECVD:
       wifi_event_dpp_config_received_t *config = event_data;
-      memcpy(&s_dpp_wifi_config, &config->wifi_cfg, sizeof(s_dpp_wifi_config));
-      s_retry_num = 0;
-      esp_wifi_set_config(WIFI_IF_STA, &s_dpp_wifi_config);
+      memcpy(&wifi_config, &config->wifi_cfg, sizeof(wifi_config));
+      retry_num = 0;
+      esp_wifi_set_config(WIFI_IF_STA, &wifi_config);
 
       assert(xSemaphoreTake(state_mutex, portMAX_DELAY) == pdTRUE);
       state.wifi.status = WIFI_STATUS_CONNECTING;
-      memcpy(&state.wifi.conf, &s_dpp_wifi_config.sta,
-             sizeof(s_dpp_wifi_config.sta));
+      memcpy(&state.wifi.conf, &wifi_config.sta, sizeof(wifi_config.sta));
       assert(xSemaphoreGive(state_mutex) == pdTRUE);
       notify_gui_changed();
 
       esp_wifi_connect();
       break;
     case WIFI_EVENT_DPP_FAILED:
+      assert(xSemaphoreTake(state_mutex, portMAX_DELAY) == pdTRUE);
+
       wifi_event_dpp_failed_t *dpp_failure = event_data;
-      if (s_retry_num < 5) {
+      if (retry_num < 5) {
         ESP_LOGI(TAG, "DPP Auth failed (Reason: %s), retry...",
                  esp_err_to_name((int)dpp_failure->failure_reason));
         ESP_ERROR_CHECK(esp_supp_dpp_start_listen());
-        s_retry_num++;
+        retry_num++;
+        state.wifi.status = WIFI_STATUS_CONNECTING;
       } else {
-        xEventGroupSetBits(s_dpp_event_group, DPP_AUTH_FAIL_BIT);
+        ESP_LOGE("TAG", "DPP auth failed, max entries exceeded");
+        state.wifi.status = WIFI_STATUS_FAILED;
       }
 
-      assert(xSemaphoreTake(state_mutex, portMAX_DELAY) == pdTRUE);
-      state.wifi.status = WIFI_STATUS_WAITING_SCAN;
       assert(xSemaphoreGive(state_mutex) == pdTRUE);
       notify_gui_changed();
       break;
+#endif
     default:
       break;
     }
@@ -145,7 +158,7 @@ static void event_handler(void *arg, esp_event_base_t event_base,
   if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
     ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
     ESP_LOGI(TAG, "got ip:" IPSTR, IP2STR(&event->ip_info.ip));
-    s_retry_num = 0;
+    retry_num = 0;
 
     assert(xSemaphoreTake(state_mutex, portMAX_DELAY) == pdTRUE);
     state.wifi.status = WIFI_STATUS_CONNECTED;
@@ -153,13 +166,11 @@ static void event_handler(void *arg, esp_event_base_t event_base,
     assert(xSemaphoreGive(state_mutex) == pdTRUE);
     notify_gui_changed();
 
-    xEventGroupSetBits(s_dpp_event_group, DPP_CONNECTED_BIT);
+    xEventGroupSetBits(wifi_event_group, WIFI_CONNECTED_BIT);
   }
 }
 
-static void dpp_enrollee_init() {
-  s_dpp_event_group = xEventGroupCreate();
-
+static void wifi_connection_init() {
   ESP_ERROR_CHECK(esp_netif_init());
 
   ESP_ERROR_CHECK(esp_event_loop_create_default());
@@ -174,39 +185,44 @@ static void dpp_enrollee_init() {
   ESP_ERROR_CHECK(esp_wifi_init(&cfg));
 
   ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
+
+#if CONFIG_WIFI_USE_DPP
   ESP_ERROR_CHECK(esp_supp_dpp_init());
   ESP_ERROR_CHECK(
-      esp_supp_dpp_bootstrap_gen("4", DPP_BOOTSTRAP_QR_CODE, NULL, NULL));
+      // esp_supp_dpp_bootstrap_gen("4", DPP_BOOTSTRAP_QR_CODE, NULL, NULL));
+      esp_supp_dpp_bootstrap_gen("8", DPP_BOOTSTRAP_QR_CODE, priv, NULL));
+#else
+  ESP_LOGI(TAG, "not using DPP, use SSID: %s", CONFIG_WIFI_SSID);
+  wifi_config_t conf = {
+      .sta =
+          {
+              .ssid = CONFIG_WIFI_SSID,
+              .password = CONFIG_WIFI_PASSWORD,
+              .threshold.authmode = WIFI_AUTH_WPA2_PSK,
+          },
+  };
+  wifi_config = conf;
+  assert(xSemaphoreTake(state_mutex, portMAX_DELAY) == pdTRUE);
+  memcpy(&state.wifi.conf, &wifi_config.sta, sizeof(wifi_config.sta));
+  assert(xSemaphoreGive(state_mutex) == pdTRUE);
+  ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
+#endif
+
+  ESP_LOGI(TAG, "esp_wifi_start");
   ESP_ERROR_CHECK(esp_wifi_start());
 
-  /* Waiting until either the connection is established (WIFI_CONNECTED_BIT) or
-   * connection failed for the maximum number of re-tries (WIFI_FAIL_BIT). The
-   * bits are set by event_handler() (see above) */
-  EventBits_t bits = xEventGroupWaitBits(
-      s_dpp_event_group,
-      DPP_CONNECTED_BIT | DPP_CONNECT_FAIL_BIT | DPP_AUTH_FAIL_BIT, pdFALSE,
-      pdFALSE, portMAX_DELAY);
+  ESP_LOGI(TAG, "wait bits");
+  EventBits_t bits =
+      xEventGroupWaitBits(wifi_event_group, WIFI_CONNECTED_BIT | WIFI_FAIL_BIT,
+                          pdFALSE, pdFALSE, portMAX_DELAY);
 
-  /* xEventGroupWaitBits() returns the bits before the call returned, hence we
-   * can test which event actually happened. */
-  if (bits & DPP_CONNECTED_BIT) {
-  } else if (bits & DPP_CONNECT_FAIL_BIT) {
-    ESP_LOGI(TAG, "Failed to connect to SSID:%s, password:%s",
-             s_dpp_wifi_config.sta.ssid, s_dpp_wifi_config.sta.password);
-  } else if (bits & DPP_AUTH_FAIL_BIT) {
-    ESP_LOGI(TAG, "DPP Authentication failed after %d retries", s_retry_num);
+  if (bits & WIFI_CONNECTED_BIT) {
+    ESP_LOGI(TAG, "connected to ap SSID:%s", CONFIG_WIFI_SSID);
+  } else if (bits & WIFI_FAIL_BIT) {
+    ESP_LOGI(TAG, "failed to connect to ap SSID:%s", CONFIG_WIFI_SSID);
   } else {
     ESP_LOGE(TAG, "UNEXPECTED EVENT");
   }
-
-  // TODO: reconnect logic
-
-  esp_supp_dpp_deinit();
-  ESP_ERROR_CHECK(esp_event_handler_unregister(IP_EVENT, IP_EVENT_STA_GOT_IP,
-                                               &event_handler));
-  ESP_ERROR_CHECK(esp_event_handler_unregister(WIFI_EVENT, ESP_EVENT_ANY_ID,
-                                               &event_handler));
-  vEventGroupDelete(s_dpp_event_group);
 }
 
 static esp_err_t http_event_handler(esp_http_client_event_t *evt) {
@@ -346,6 +362,7 @@ static void handle_msg(char *data, size_t size) {
 }
 
 void wifi_task(void *) {
+  wifi_event_group = xEventGroupCreate();
   wifi_buf_handle = xRingbufferCreate(1024, RINGBUF_TYPE_NOSPLIT);
   assert(wifi_buf_handle != NULL);
 
@@ -357,13 +374,19 @@ void wifi_task(void *) {
     ret = nvs_flash_init();
   }
   ESP_ERROR_CHECK(ret);
-  dpp_enrollee_init();
+
+  wifi_connection_init(); // blocking until connected
 
   esp_sntp_config_t config = ESP_NETIF_SNTP_DEFAULT_CONFIG("pool.ntp.org");
   esp_netif_sntp_init(&config);
 
   if (esp_netif_sntp_sync_wait(pdMS_TO_TICKS(10000)) != ESP_OK)
     ESP_LOGE(TAG, "failed to update system time within 10s timeout");
+
+  assert(xSemaphoreTake(state_mutex, portMAX_DELAY) == pdTRUE);
+  state.wifi.ntp_sync = true;
+  assert(xSemaphoreGive(state_mutex) == pdTRUE);
+  notify_gui_changed();
 
   time_t t = time(NULL);
   char timestr[64];

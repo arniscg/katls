@@ -1,0 +1,14 @@
+menu "Wifi Configuration"
+    config WIFI_USE_DPP
+        bool "Use DPP"
+        default n
+
+    config WIFI_SSID
+        string "WiFI SSID"
+
+    config WIFI_PASSWORD
+        string "WiFi Password"
+
+    config WIFI_DPP_PRIVKEY
+        string "WiFi DPP Private Key"
+endmenu

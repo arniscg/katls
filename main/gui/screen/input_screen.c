@@ -72,6 +72,7 @@ static BaseEntry *state_to_journal_entry(InputScreen *s) {
     break;
   }
   default:
+    return NULL;
     break;
   }
 
@@ -79,13 +80,13 @@ static BaseEntry *state_to_journal_entry(InputScreen *s) {
   return be;
 }
 
-static void on_ok_done(void *scr) {
-  ESP_LOGI(TAG, "on_ok_done");
-  InputScreen *s = (InputScreen *)scr;
-  ESP_ERROR_CHECK(esp_timer_delete(s->timer));
-  lv_obj_set_style_bg_color(s->cont, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
-  screens_return();
-}
+// static void on_ok_done(void *scr) {
+//   ESP_LOGI(TAG, "on_ok_done");
+//   InputScreen *s = (InputScreen *)scr;
+//   ESP_ERROR_CHECK(esp_timer_delete(s->timer));
+//   lv_obj_set_style_bg_color(s->cont, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
+//   screens_return();
+// }
 
 static void on_button(InputScreen *s, uint8_t but) {
   ESP_LOGI(TAG, "on_button: %u", but);
@@ -125,18 +126,23 @@ static void on_button(InputScreen *s, uint8_t but) {
     break;
   case BUTTON_OK: {
     BaseEntry *e = state_to_journal_entry(s);
+    if (!e)
+      return;
     assert(xSemaphoreTake(journal_mutex, portMAX_DELAY) == pdTRUE);
-    assert(journal_add(e));
+    journal_add(e);
     assert(xSemaphoreGive(journal_mutex) == pdTRUE);
-    s->state = INPUT_JOURNAL_ADD;
-    esp_timer_create_args_t timer_args = {
-        .callback = &on_ok_done,
-        .arg = (void *)s,
-        .name = "add-timer",
-    };
-    ESP_ERROR_CHECK(esp_timer_create(&timer_args, &s->timer));
-    ESP_ERROR_CHECK(esp_timer_start_once(s->timer, 1000000));
-    break;
+    // s->state = INPUT_JOURNAL_ADD;
+    // esp_timer_create_args_t timer_args = {
+    //     .callback = &on_ok_done,
+    //     .arg = (void *)s,
+    //     .name = "add-timer",
+    // };
+    // ESP_ERROR_CHECK(esp_timer_create(&timer_args, &s->timer));
+    // ESP_ERROR_CHECK(esp_timer_start_once(s->timer, 1000000));
+    // lv_obj_set_style_bg_color(s->cont, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
+    screens_return();
+    return;
+    // break;
   }
   default:
     break;
@@ -166,6 +172,7 @@ void screen_input_init(InputScreen *s) {
   s->base.type = SCREEN_INPUT;
   s->base.on_event = &handle_event;
   s->base.on_load = NULL;
+  s->base.on_unload = NULL;
 
   s->cont = lv_obj_create(s->base.root);
   lv_obj_set_size(s->cont, LV_PCT(100), LV_PCT(100));

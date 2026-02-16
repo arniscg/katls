@@ -16,24 +16,28 @@ static WifiScreen wifi_screen;
 static InputScreen input_screen;
 static JournalScreen journal_screen;
 
+static void change_screen(BaseScreen *scr) {
+  if (curr_screen == scr)
+    return;
+  prev_screen = curr_screen;
+  curr_screen = scr;
+
+  if (prev_screen && prev_screen->on_unload)
+    prev_screen->on_unload(prev_screen);
+
+  lv_scr_load(curr_screen->root);
+
+  if (curr_screen->on_load)
+    curr_screen->on_load(curr_screen);
+}
+
 void screens_init() {
   ESP_LOGI(TAG, "init");
   screen_wifi_init(&wifi_screen);
   screen_input_init(&input_screen);
   screen_journal_init(&journal_screen);
 
-  curr_screen = (BaseScreen *)&wifi_screen;
-  lv_scr_load(curr_screen->root);
-}
-
-void change_screen(BaseScreen *scr) {
-  if (curr_screen == scr)
-    return;
-  prev_screen = curr_screen;
-  curr_screen = scr;
-  if (curr_screen->on_load)
-    curr_screen->on_load(scr);
-  lv_scr_load(curr_screen->root);
+  change_screen((BaseScreen *)&wifi_screen);
 }
 
 void screens_on_event(GUIEvent ev, uint8_t *data, unsigned size) {
