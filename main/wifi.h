@@ -5,7 +5,7 @@
 
 typedef enum {
   WIFI_HTTP_SEND = 0,
-  WIFI_HTTP_DEL = 0,
+  WIFI_HTTP_DEL = 1,
 } WifiMsg;
 
 extern RingbufHandle_t wifi_buf_handle;

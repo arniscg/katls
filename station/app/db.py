@@ -37,7 +37,8 @@ def db_init() -> None:
             id TEXT PRIMARY KEY,
             time INTEGER NOT NULL,
             event TEXT NOT NULL,
-            data TEXT NOT NULL
+            data TEXT NOT NULL,
+            deleted BOOLEAN NOT NULL CHECK (deleted IN (0, 1))
         );
     """
     )
@@ -58,6 +59,24 @@ def db_get():
 
 def db_add(db: sqlite3.Connection, ev: Event):
     db.execute(
-        "INSERT INTO events (id, time, event, data) VALUES (?, ?, ?, ?)",
-        (ev.id, ev.time, ev.event, json.dumps(ev.data)),
+        "INSERT INTO events (id, time, event, data, deleted) VALUES (?, ?, ?, ?, ?)",
+        (ev.id, ev.time, ev.event, ev.data, ev.deleted),
     )
+    db.commit()
+
+
+def db_mark_deleted(db: sqlite3.Connection, event_id: str):
+    db.execute("UPDATE events SET deleted = TRUE WHERE id = ?", (event_id,))
+    db.commit()
+
+
+def db_getall(db: sqlite3.Connection):
+    db.row_factory = sqlite3.Row
+    cur = db.cursor()
+
+    cur.execute("SELECT id, time, event, data, deleted FROM events")
+    rows = cur.fetchall()
+
+    data = [dict(row) for row in rows]
+
+    return data

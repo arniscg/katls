@@ -342,6 +342,7 @@ static void handle_send_entry(unsigned entry_id, char *data, size_t size) {
       entry_state_update(e, ENTRY_STATE_STORED);
     } else {
       ESP_LOGI(TAG, "store failed %u", entry_id);
+      entry_state_update(e, ENTRY_STATE_STORE_FAILED);
     }
   } else {
     ESP_LOGE(TAG, "HTTP POST request failed");
