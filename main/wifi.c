@@ -304,6 +304,19 @@ static int http_post(char *data) {
   return err;
 }
 
+static int http_delete(unsigned id) {
+  char path[64];
+  snprintf(path, sizeof(path), "/events/%u", id);
+  ESP_LOGI(TAG, "delete path: %s", path);
+  esp_http_client_config_t config = {
+      .host = HOSTNAME, .path = path, .port = 8000, .event_handler = NULL};
+  client = esp_http_client_init(&config);
+  esp_http_client_set_method(client, HTTP_METHOD_DELETE);
+  int err = esp_http_client_perform(client);
+  esp_http_client_cleanup(client);
+  return err;
+}
+
 static void handle_send_entry(unsigned entry_id, char *data, size_t size) {
   ESP_LOGI(TAG, "handle_send_entry");
 
@@ -338,6 +351,20 @@ static void handle_send_entry(unsigned entry_id, char *data, size_t size) {
   assert(xSemaphoreGive(journal_mutex) == pdTRUE);
 }
 
+static void handle_del_entry(unsigned entry_id) {
+  int ret = http_delete(entry_id);
+  if (ret == ESP_OK) {
+    int status = esp_http_client_get_status_code(client);
+    if (status == 200 || status == 202 || status == 204) {
+      ESP_LOGI(TAG, "delete success %u", entry_id);
+    } else {
+      ESP_LOGI(TAG, "delete fail %u, status: %d", entry_id, status);
+    }
+  } else {
+    ESP_LOGE(TAG, "HTTP DELETE failed for entry %u", entry_id);
+  }
+}
+
 static void handle_msg(char *data, size_t size) {
   if (size < 1) {
     ESP_LOGE(TAG, "msg too short");
@@ -356,6 +383,14 @@ static void handle_msg(char *data, size_t size) {
     unsigned id = 0;
     memcpy(&id, data + 1, sizeof(id));
     handle_send_entry(id, data + 1 + sizeof(id), size - 1 - sizeof(id));
+  } else if (msg == WIFI_HTTP_DEL) {
+    if (size < 5) {
+      ESP_LOGE(TAG, "http send msg too short");
+      return;
+    }
+    unsigned id = 0;
+    memcpy(&id, data + 1, sizeof(id));
+    handle_del_entry(id);
   } else {
     ESP_LOGE(TAG, "unhandled msg %d", msg);
   }

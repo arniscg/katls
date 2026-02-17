@@ -67,10 +67,6 @@ void screens_on_event(GUIEvent ev, uint8_t *data, unsigned size) {
                 b == BUTTON_F4) &&
                (!curr_screen || curr_screen->type != SCREEN_INPUT)) {
       change_screen((BaseScreen *)&input_screen);
-    } else if (b == BUTTON_CANCEL) {
-      if (prev_screen)
-        change_screen(prev_screen);
-      return;
     }
     break;
   default:

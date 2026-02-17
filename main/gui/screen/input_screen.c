@@ -131,6 +131,9 @@ static void on_button(InputScreen *s, uint8_t but) {
     assert(xSemaphoreTake(journal_mutex, portMAX_DELAY) == pdTRUE);
     journal_add(e);
     assert(xSemaphoreGive(journal_mutex) == pdTRUE);
+    // NOTE: this timer logic is removed because you can only update lvgl in
+    // specific times. ESP timer callback will sooner or later execute in bad
+    // time and lvgl will crash
     // s->state = INPUT_JOURNAL_ADD;
     // esp_timer_create_args_t timer_args = {
     //     .callback = &on_ok_done,
@@ -140,9 +143,11 @@ static void on_button(InputScreen *s, uint8_t but) {
     // ESP_ERROR_CHECK(esp_timer_create(&timer_args, &s->timer));
     // ESP_ERROR_CHECK(esp_timer_start_once(s->timer, 1000000));
     // lv_obj_set_style_bg_color(s->cont, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
+  }
+  /* fallthrough */
+  case BUTTON_CANCEL: {
     screens_return();
     return;
-    // break;
   }
   default:
     break;

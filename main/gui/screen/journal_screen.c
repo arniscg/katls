@@ -1,4 +1,5 @@
 #include "journal_screen.h"
+#include "../../buttons.h"
 #include "../../journal.h"
 #include <esp_log.h>
 
@@ -47,11 +48,43 @@ static void update_list(JournalScreen *s) {
   assert(xSemaphoreGive(journal_mutex) == pdTRUE);
 }
 
+static void on_button(JournalScreen *s, uint8_t button) {
+  switch (button) {
+  case BUTTON_OK:
+    assert(xSemaphoreTake(journal_mutex, portMAX_DELAY) == pdTRUE);
+
+    BaseEntry *entries[JOURNAL_SIZE] = {0};
+    unsigned n = journal_get(entries, JOURNAL_SIZE);
+
+    for (unsigned i = 0; i < n; ++i) {
+      BaseEntry *e = entries[i];
+      if (e->state != ENTRY_STATE_STORE_FAILED)
+        continue;
+      e->storetry = 0;
+      entry_state_update(e, ENTRY_STATE_STORING);
+    }
+
+    assert(xSemaphoreGive(journal_mutex) == pdTRUE);
+    break;
+  case BUTTON_CANCEL:
+    assert(xSemaphoreTake(journal_mutex, portMAX_DELAY) == pdTRUE);
+    journal_pop();
+    assert(xSemaphoreGive(journal_mutex) == pdTRUE);
+    break;
+  default:
+    break;
+  }
+}
+
 static void handle_event(BaseScreen *s, GUIEvent event, uint8_t *data,
                          unsigned size) {
   if (event == GUI_EVT_JOURNAL_CHANGED) {
     update_list((JournalScreen *)s);
     return;
+  } else if (event == GUI_EVT_BUTTON_PRESSED) {
+    assert(size == 1);
+    uint8_t b = data[0];
+    on_button((JournalScreen *)s, b);
   }
 
   ESP_LOGI(TAG, "unhandled event %u", (unsigned)event);

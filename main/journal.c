@@ -45,6 +45,10 @@ static unsigned idx_next(unsigned i) {
   return i == JOURNAL_SIZE - 1 ? 0 : i + 1;
 }
 
+static unsigned idx_prev(unsigned i) {
+  return i == 0 ? JOURNAL_SIZE - 1 : i - 1;
+}
+
 static void notify_gui_changed() {
   uint8_t msg[] = {GUI_EVT_JOURNAL_CHANGED};
   if (xRingbufferSend(gui_buf_handle, msg, sizeof(msg), 0) != pdTRUE)
@@ -105,6 +109,34 @@ unsigned journal_get(BaseEntry **arr, unsigned cnt) {
   }
 
   return n;
+}
+
+void journal_pop() {
+  if (j.currsize == 0)
+    return;
+
+  BaseEntry *e = j.entries[j.head];
+  assert(e);
+
+  if (e->state != ENTRY_STATE_STORE_FAILED) {
+    // NOTE: failure is not handled!
+    char msg[256];
+    msg[0] = WIFI_HTTP_DEL;
+    memcpy(msg + 1, &e->id, sizeof(e->id));
+
+    if (xRingbufferSend(wifi_buf_handle, msg, sizeof(msg), 0) != pdTRUE) {
+      ESP_LOGE(TAG, "failed to send WIFI_HTTP_DEL msg");
+      entry_store(e);
+      return;
+    }
+  }
+
+  free(j.entries[j.head]);
+  j.entries[j.head] = NULL;
+  j.head = idx_prev(j.head);
+  --j.currsize;
+
+  notify_gui_changed();
 }
 
 void entry_to_str(BaseEntry *e, char *buf, size_t len) {
@@ -268,9 +300,18 @@ void entry_store(BaseEntry *e) {
 }
 
 void entry_state_update(BaseEntry *e, EntryState s) {
-  if (e->state != ENTRY_STATE_STORING) {
+  if (e->state != ENTRY_STATE_STORING && e->state != ENTRY_STATE_STORE_FAILED) {
     ESP_LOGW(TAG, "state update not expected");
     notify_gui_changed();
+    return;
+  }
+
+  if (e->state == ENTRY_STATE_STORE_FAILED && s == ENTRY_STATE_STORING) {
+    ESP_LOGI(TAG, "retry full store, entry %u", e->id);
+    e->storetry = 0;
+    e->state = s;
+    notify_gui_changed();
+    entry_store(e);
     return;
   }
 

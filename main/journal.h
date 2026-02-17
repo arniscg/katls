@@ -60,6 +60,7 @@ void journal_init();
 bool journal_add(BaseEntry *);
 BaseEntry *journal_find_entry(unsigned);
 unsigned journal_get(BaseEntry **, unsigned);
+void journal_pop();
 
 void entry_to_str(BaseEntry *, char *, size_t);
 void entry_init(BaseEntry *);
