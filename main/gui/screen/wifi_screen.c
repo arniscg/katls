@@ -126,10 +126,10 @@ static void update(WifiScreen *s) {
   assert(xSemaphoreGive(state_mutex) == pdTRUE);
 }
 
-static void timer_update(lv_timer_t *t) {
-  WifiScreen *s = (WifiScreen *)lv_timer_get_user_data(t);
-  update(s);
-}
+// static void timer_update(lv_timer_t *t) {
+//   WifiScreen *s = (WifiScreen *)lv_timer_get_user_data(t);
+//   update(s);
+// }
 
 static void handle_event(BaseScreen *s, GUIEvent event, uint8_t *data,
                          unsigned size) {

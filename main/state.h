@@ -30,6 +30,7 @@ typedef struct {
 
 typedef struct {
   WifiState wifi;
+  unsigned id;
 } State;
 
 extern State state;

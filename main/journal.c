@@ -1,11 +1,12 @@
 #include "journal.h"
-#include "./wifi.h"
 #include "common.h"
 #include "esp_err.h"
 #include "esp_log.h"
 #include "esp_vfs.h"
 #include "esp_vfs_fat.h"
 #include "gui/gui.h"
+#include "state.h"
+#include "wifi.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -23,7 +24,6 @@ typedef struct {
   unsigned head;
 } Journal;
 static bool initdone = false;
-static unsigned id = 0;
 static Journal j;
 
 void journal_init() {
@@ -56,7 +56,6 @@ static void notify_gui_changed() {
 }
 
 bool journal_add(BaseEntry *e) {
-  e->time = time(NULL);
   unsigned nextidx = idx_next(j.head);
 
   if (j.currsize == JOURNAL_SIZE) {
@@ -172,8 +171,10 @@ void entry_to_str(BaseEntry *e, char *buf, size_t len) {
 }
 
 void entry_init(BaseEntry *e) {
-  e->id = ++id;
-  e->time = 0;
+  e->time = time(NULL);
+  assert(xSemaphoreTake(state_mutex, portMAX_DELAY) == pdTRUE);
+  e->id = ++state.id;
+  assert(xSemaphoreGive(state_mutex) == pdTRUE);
   e->state = ENTRY_STATE_INIT;
   e->storetry = 0;
 }

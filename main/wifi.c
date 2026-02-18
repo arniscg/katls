@@ -30,7 +30,8 @@ static esp_http_client_handle_t client = NULL;
 #define WIFI_CONNECTED_BIT BIT0
 #define WIFI_FAIL_BIT BIT1
 #define WIFI_MAX_RETRY_NUM 5
-#define HOSTNAME "rpi5.home.lan"
+// #define HOSTNAME "rpi5.home.lan"
+#define HOSTNAME "192.168.8.47"
 
 static void notify_gui_changed() {
   uint8_t msg[] = {GUI_EVT_WIFI_CHANGED};
@@ -419,15 +420,16 @@ void wifi_task(void *) {
   if (esp_netif_sntp_sync_wait(pdMS_TO_TICKS(10000)) != ESP_OK)
     ESP_LOGE(TAG, "failed to update system time within 10s timeout");
 
-  assert(xSemaphoreTake(state_mutex, portMAX_DELAY) == pdTRUE);
-  state.wifi.ntp_sync = true;
-  assert(xSemaphoreGive(state_mutex) == pdTRUE);
-  notify_gui_changed();
-
   time_t t = time(NULL);
   char timestr[64];
   timeStr(&t, timestr, sizeof(timestr), false);
   ESP_LOGI(TAG, "current time: %s", timestr);
+
+  assert(xSemaphoreTake(state_mutex, portMAX_DELAY) == pdTRUE);
+  state.wifi.ntp_sync = true;
+  state.id = (unsigned)t; // use startup time as entry ID base
+  assert(xSemaphoreGive(state_mutex) == pdTRUE);
+  notify_gui_changed();
 
   size_t item_size;
   char *item = NULL;
