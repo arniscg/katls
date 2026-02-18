@@ -37,7 +37,7 @@ def db_init() -> None:
             id TEXT PRIMARY KEY,
             time INTEGER NOT NULL,
             event TEXT NOT NULL,
-            data TEXT NOT NULL,
+            data TEXT,
             deleted BOOLEAN NOT NULL CHECK (deleted IN (0, 1))
         );
     """

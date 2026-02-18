@@ -14,5 +14,5 @@ class Event(BaseModel):
     id: str
     time: int
     event: EventType
-    data: str = None
+    data: str = ""
     deleted: int = 0
