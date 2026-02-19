@@ -28,9 +28,15 @@ typedef struct {
   bool ntp_sync;
 } WifiState;
 
+typedef enum {
+  SLEEP_READY_WIFI = 0,
+  SLEEP_READY_GUI = 1,
+} SleepReadyBit;
+
 typedef struct {
   WifiState wifi;
   unsigned id;
+  unsigned sleepReady;
 } State;
 
 extern State state;

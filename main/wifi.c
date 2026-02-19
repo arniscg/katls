@@ -24,6 +24,7 @@ RingbufHandle_t wifi_buf_handle;
 static EventGroupHandle_t wifi_event_group;
 
 static int retry_num = 0;
+static bool enter_sleep = false;
 
 static esp_http_client_handle_t client = NULL;
 
@@ -88,6 +89,14 @@ static void event_handler(void *arg, esp_event_base_t event_base,
     case WIFI_EVENT_STA_DISCONNECTED:
       ESP_LOGI(TAG, "WIFI_EVENT_STA_DISCONNECTED");
       assert(xSemaphoreTake(state_mutex, portMAX_DELAY) == pdTRUE);
+
+      if (enter_sleep) {
+        state.wifi.status = WIFI_STATUS_INIT;
+        state.sleepReady |= BIT(SLEEP_READY_WIFI);
+        enter_sleep = false;
+        assert(xSemaphoreGive(state_mutex) == pdTRUE);
+        return;
+      }
 
       if (retry_num < WIFI_MAX_RETRY_NUM) {
         esp_wifi_connect();
@@ -393,6 +402,22 @@ static void handle_msg(char *data, size_t size) {
     unsigned id = 0;
     memcpy(&id, data + 1, sizeof(id));
     handle_del_entry(id);
+  } else if (msg == WIFI_SLEEP) {
+    if (size < 2) {
+      ESP_LOGE(TAG, "sleep msg too short");
+      return;
+    }
+    bool enter = (bool)data[1];
+    if (enter) {
+      ESP_LOGI(TAG, "received sleep enter event");
+      enter_sleep = true;
+      esp_wifi_stop();
+    } else {
+      ESP_LOGI(TAG, "received sleep exit event");
+      enter_sleep = false;
+      notify_gui_changed();
+      ESP_ERROR_CHECK(esp_wifi_start());
+    }
   } else {
     ESP_LOGE(TAG, "unhandled msg %d", msg);
   }

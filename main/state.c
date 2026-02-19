@@ -12,4 +12,5 @@ void state_init() {
   state.wifi.ip.addr = 0;
   state.wifi.ntp_sync = false;
   state.id = 0;
+  state.sleepReady = 0;
 }

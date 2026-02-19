@@ -1,4 +1,5 @@
 #include "gui.h"
+#include "../state.h"
 #include "driver/gpio.h"
 #include "driver/spi_master.h"
 #include "esp_log.h"
@@ -16,6 +17,7 @@
 #define PIN_NUM_CS 5
 #define PIN_NUM_DC 2
 #define PIN_NUM_RST 15
+#define PIN_NUM_LED 22
 
 static const char *TAG = "GUI";
 
@@ -101,6 +103,14 @@ void gui_task(void *) {
   gui_buf_handle = xRingbufferCreate(8192, RINGBUF_TYPE_NOSPLIT);
   assert(gui_buf_handle != NULL);
 
+  ESP_LOGI(TAG, "enable display LED");
+  const gpio_config_t conf = {
+      .mode = GPIO_MODE_OUTPUT,
+      .pin_bit_mask = BIT64(PIN_NUM_LED),
+  };
+  gpio_config(&conf);
+  gpio_set_level(PIN_NUM_LED, 1);
+
   spi_init();
 
   ESP_LOGI(TAG, "reset the display");
@@ -139,7 +149,16 @@ void gui_task(void *) {
       item = (char *)xRingbufferReceive(gui_buf_handle, &item_size, 0);
       if (item == NULL)
         break;
-      screens_on_event(item[0], (uint8_t *)(item + 1), item_size - 1);
+      if (item[0] == GUI_EVT_SLEEP) {
+        assert(item_size == 2);
+        bool enter = (bool)item[1];
+        gpio_set_level(PIN_NUM_LED, enter ? 0 : 1);
+        assert(xSemaphoreTake(state_mutex, portMAX_DELAY) == pdTRUE);
+        state.sleepReady |= BIT(SLEEP_READY_GUI);
+        assert(xSemaphoreGive(state_mutex) == pdTRUE);
+      } else {
+        screens_on_event(item[0], (uint8_t *)(item + 1), item_size - 1);
+      }
       vRingbufferReturnItem(gui_buf_handle, item);
     }
 
