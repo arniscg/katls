@@ -8,7 +8,8 @@
 #define BUTTON_OK 27
 #define BUTTON_CANCEL 14
 #define BUTTON_FORWARD 12
-#define BUTTON_BACK 13
+#define BUTTON_BACK 16
+#define BUTTON_POWER 13
 
 void buttons_init();
 
