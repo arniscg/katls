@@ -1,7 +1,7 @@
 from datetime import datetime
 from dataclasses import dataclass
 from pathlib import Path
-import struct
+import struct, json
 
 
 @dataclass
@@ -46,6 +46,7 @@ def type_to_num(e: Entry):
         return 4
     elif isinstance(e, CleanEntry):
         return 5
+
 
 # If multiple entries entered on same time, read them in predefined order
 # Having BagEntry before TempEntry (ON) makes the processing easier later on
@@ -150,6 +151,43 @@ def serialize(entry: Entry) -> bytearray:
     elif isinstance(entry, CleanEntry):
         pass
 
-    a.append(t) # for reverse reading
+    a.append(t)  # for reverse reading
 
     return a
+
+
+def db_entries_to_txt(entries: list[dict]) -> list[str]:
+    res: list[str] = []
+    last_time: int | None = None
+    last_year: int | None = None
+    for ent in entries:
+        t = datetime.fromtimestamp(ent["time"])
+
+        if t.year != last_year:
+            res.append(str(t.year))
+        last_year = t.year
+
+        s = entry_str(ent["event"], ent["data"])
+
+        if last_time == t:
+            assert len(res)
+            res[-1] += f" {s}"
+        else:
+            res.append(f"{t.strftime('%d.%mT%H:%M')} {s}")
+        last_time = t
+
+    return res
+
+
+def entry_str(event: str, data: str) -> str:
+    d = json.loads(data) if data else {}
+    if event == "set-temp":
+        return f"{d['value']}C"
+    elif event == "clean":
+        return "P"
+    elif event == "off":
+        return "X"
+    elif event == "restock":
+        return f"G{d['value']}"
+    elif event == "add-bags":
+        return f"+{d['value']}"

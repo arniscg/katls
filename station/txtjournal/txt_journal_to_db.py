@@ -5,6 +5,8 @@ import sqlite3
 import json
 
 
+# python3 txt_journal_to_db.py ./journal.txt /mnt/pechka-backups/pechka-journal_$(date +"%F_%s")_fromtxt.db
+
 def main():
     args = parse_args()
 
@@ -21,7 +23,8 @@ def main():
             id TEXT PRIMARY KEY,
             time INTEGER NOT NULL,
             event TEXT NOT NULL,
-            data TEXT NOT NULL
+            data TEXT,
+            deleted BOOLEAN NOT NULL CHECK (deleted IN (0, 1))
         );
     """
     )
@@ -34,7 +37,7 @@ def main():
     data = None
 
     for i, e in enumerate(entries):
-        id = f"backup_{i}"
+        id = f"txt_{i}"
         time = int(e.time.timestamp())
         if isinstance(e, BagsEntry):
             event = "add-bags"
@@ -54,8 +57,8 @@ def main():
 
         print(f"insert {id} {time} {event} {data}")
         conn.execute(
-            "INSERT INTO events (id, time, event, data) VALUES (?, ?, ?, ?)",
-            (id, time, event, json.dumps(data)),
+            "INSERT INTO events (id, time, event, data, deleted) VALUES (?, ?, ?, ?, ?)",
+            (id, time, event, json.dumps(data) if data else "", 0),
         )
 
     conn.close()

@@ -13,4 +13,5 @@ services:
       context: .
       dockerfile: Dockerfile.backup
     volumes:
+      - ./data:/data
       - /mnt/pechka-backups:/backups
