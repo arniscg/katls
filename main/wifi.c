@@ -31,8 +31,7 @@ static esp_http_client_handle_t client = NULL;
 #define WIFI_CONNECTED_BIT BIT0
 #define WIFI_FAIL_BIT BIT1
 #define WIFI_MAX_RETRY_NUM 5
-// #define HOSTNAME "rpi5.home.lan"
-#define HOSTNAME "192.168.8.47"
+#define HOSTNAME "rpi5.home.lan"
 
 static void notify_gui_changed() {
   uint8_t msg[] = {GUI_EVT_WIFI_CHANGED};
@@ -91,7 +90,8 @@ static void event_handler(void *arg, esp_event_base_t event_base,
       assert(xSemaphoreTake(state_mutex, portMAX_DELAY) == pdTRUE);
 
       if (enter_sleep) {
-        state.wifi.status = WIFI_STATUS_INIT;
+        state.wifi.status = WIFI_STATUS_CONNECTING;
+        state.wifi.ntp_sync = false;
         state.sleepReady |= BIT(SLEEP_READY_WIFI);
         enter_sleep = false;
         assert(xSemaphoreGive(state_mutex) == pdTRUE);
@@ -170,9 +170,22 @@ static void event_handler(void *arg, esp_event_base_t event_base,
     ESP_LOGI(TAG, "got ip:" IPSTR, IP2STR(&event->ip_info.ip));
     retry_num = 0;
 
+    esp_sntp_config_t config = ESP_NETIF_SNTP_DEFAULT_CONFIG("pool.ntp.org");
+    esp_netif_sntp_init(&config);
+
+    if (esp_netif_sntp_sync_wait(pdMS_TO_TICKS(10000)) != ESP_OK)
+      ESP_LOGE(TAG, "failed to update system time within 10s timeout");
+
+    time_t t = time(NULL);
+    char timestr[64];
+    timeStr(&t, timestr, sizeof(timestr), false);
+    ESP_LOGI(TAG, "current time: %s", timestr);
+
     assert(xSemaphoreTake(state_mutex, portMAX_DELAY) == pdTRUE);
     state.wifi.status = WIFI_STATUS_CONNECTED;
     state.wifi.ip = event->ip_info.ip;
+    state.wifi.ntp_sync = true;
+    state.id = (unsigned)t; // use startup time as entry ID base
     assert(xSemaphoreGive(state_mutex) == pdTRUE);
     notify_gui_changed();
 
@@ -412,6 +425,7 @@ static void handle_msg(char *data, size_t size) {
       ESP_LOGI(TAG, "received sleep enter event");
       enter_sleep = true;
       esp_wifi_stop();
+      esp_netif_sntp_deinit();
     } else {
       ESP_LOGI(TAG, "received sleep exit event");
       enter_sleep = false;
@@ -438,23 +452,6 @@ void wifi_task(void *) {
   ESP_ERROR_CHECK(ret);
 
   wifi_connection_init(); // blocking until connected
-
-  esp_sntp_config_t config = ESP_NETIF_SNTP_DEFAULT_CONFIG("pool.ntp.org");
-  esp_netif_sntp_init(&config);
-
-  if (esp_netif_sntp_sync_wait(pdMS_TO_TICKS(10000)) != ESP_OK)
-    ESP_LOGE(TAG, "failed to update system time within 10s timeout");
-
-  time_t t = time(NULL);
-  char timestr[64];
-  timeStr(&t, timestr, sizeof(timestr), false);
-  ESP_LOGI(TAG, "current time: %s", timestr);
-
-  assert(xSemaphoreTake(state_mutex, portMAX_DELAY) == pdTRUE);
-  state.wifi.ntp_sync = true;
-  state.id = (unsigned)t; // use startup time as entry ID base
-  assert(xSemaphoreGive(state_mutex) == pdTRUE);
-  notify_gui_changed();
 
   size_t item_size;
   char *item = NULL;
