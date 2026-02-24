@@ -5,6 +5,7 @@
  */
 
 #include "buttons.h"
+#include "common.h"
 #include "esp_err.h"
 #include "esp_flash.h"
 #include "esp_log.h"
@@ -32,6 +33,8 @@
 #define WIFI_TASK_STACK_SIZE (4 * 1024)
 #define WIFI_TASK_PRIORITY 2
 
+#define IDLE_TIME 30
+
 static const char *TAG = "main";
 
 void app_main(void) {
@@ -49,4 +52,23 @@ void app_main(void) {
 
   xTaskCreate(wifi_task, "WiFi", WIFI_TASK_STACK_SIZE, NULL, WIFI_TASK_PRIORITY,
               NULL);
+
+  while (1) {
+    vTaskDelay(pdMS_TO_TICKS(5000));
+
+    lock_state();
+    time_t last_touched = state.last_touched;
+    bool ntp_sync = state.wifi.ntp_sync;
+    unlock_state();
+
+    if (!ntp_sync || !last_touched)
+      continue;
+
+    unsigned t = time(NULL) - last_touched;
+
+    ESP_LOGI(TAG, "time since last touched: %u", t);
+
+    if (t > IDLE_TIME)
+      enter_sleep();
+  }
 }

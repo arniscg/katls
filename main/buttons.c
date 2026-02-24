@@ -1,5 +1,6 @@
 #include "buttons.h"
 #include "button_gpio.h"
+#include "common.h"
 #include "driver/gpio.h"
 #include "esp_err.h"
 #include "esp_log.h"
@@ -13,52 +14,11 @@
 
 static const char *TAG = "BUTTONS";
 
-static unsigned get_sleep_state() {
-  unsigned s = 0;
-  assert(xSemaphoreTake(state_mutex, portMAX_DELAY) == pdTRUE);
-  s = state.sleepReady;
-  assert(xSemaphoreGive(state_mutex) == pdTRUE);
-  return s;
-}
-
-static void enter_sleep() {
-  assert(xSemaphoreTake(state_mutex, portMAX_DELAY) == pdTRUE);
-  state.sleepReady = 0;
-  assert(xSemaphoreGive(state_mutex) == pdTRUE);
-
-  ESP_LOGI(TAG, "entering sleep mode");
-  char msg[2] = {GUI_EVT_SLEEP, 1};
-  if (xRingbufferSend(gui_buf_handle, msg, sizeof(msg), 0) != pdTRUE)
-    ESP_LOGE(TAG, "failed to send gui sleep enter");
-  msg[0] = WIFI_SLEEP;
-  if (xRingbufferSend(wifi_buf_handle, msg, sizeof(msg), 0) != pdTRUE)
-    ESP_LOGE(TAG, "failed to send wifi sleep enter");
-
-  unsigned sleepReady = BIT(SLEEP_READY_GUI) | BIT(SLEEP_READY_WIFI);
-  unsigned s = get_sleep_state();
-  while (s != sleepReady) {
-    ESP_LOGI(TAG, "sleep no ready yet, state: %u, expected: %u", s, sleepReady);
-    vTaskDelay(pdMS_TO_TICKS(500));
-    s = get_sleep_state();
-  }
-  ESP_ERROR_CHECK(esp_light_sleep_start());
-  ESP_LOGI(TAG, "wake-up from light sleep");
-
-  ESP_LOGI(TAG, "exiting sleep mode");
-  msg[1] = 0;
-  msg[0] = GUI_EVT_SLEEP;
-  if (xRingbufferSend(gui_buf_handle, msg, sizeof(msg), 0) != pdTRUE)
-    ESP_LOGE(TAG, "failed to send gui sleep exit");
-  msg[0] = WIFI_SLEEP;
-  if (xRingbufferSend(wifi_buf_handle, msg, sizeof(msg), 0) != pdTRUE)
-    ESP_LOGE(TAG, "failed to send wifi sleep exit");
-
-  assert(xSemaphoreTake(state_mutex, portMAX_DELAY) == pdTRUE);
-  state.sleepReady = 0;
-  assert(xSemaphoreGive(state_mutex) == pdTRUE);
-}
-
 static void button_single_click_cb(void *arg, void *usr_data) {
+  lock_state();
+  time(&state.last_touched);
+  unlock_state();
+
   uint8_t but_n = (uint8_t)(int)usr_data;
 
   if (but_n == BUTTON_POWER) {

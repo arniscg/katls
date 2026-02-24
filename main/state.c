@@ -13,4 +13,5 @@ void state_init() {
   state.wifi.ntp_sync = false;
   state.id = 0;
   state.sleepReady = 0;
+  state.last_touched = 0;
 }

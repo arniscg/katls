@@ -24,7 +24,7 @@ RingbufHandle_t wifi_buf_handle;
 static EventGroupHandle_t wifi_event_group;
 
 static int retry_num = 0;
-static bool enter_sleep = false;
+static bool in_enter_sleep = false;
 
 static esp_http_client_handle_t client = NULL;
 
@@ -87,14 +87,14 @@ static void event_handler(void *arg, esp_event_base_t event_base,
       break;
     case WIFI_EVENT_STA_DISCONNECTED:
       ESP_LOGI(TAG, "WIFI_EVENT_STA_DISCONNECTED");
-      assert(xSemaphoreTake(state_mutex, portMAX_DELAY) == pdTRUE);
+      lock_state();
 
-      if (enter_sleep) {
+      if (in_enter_sleep) {
         state.wifi.status = WIFI_STATUS_CONNECTING;
         state.wifi.ntp_sync = false;
         state.sleepReady |= BIT(SLEEP_READY_WIFI);
-        enter_sleep = false;
-        assert(xSemaphoreGive(state_mutex) == pdTRUE);
+        in_enter_sleep = false;
+        unlock_state();
         return;
       }
 
@@ -109,7 +109,7 @@ static void event_handler(void *arg, esp_event_base_t event_base,
         xEventGroupSetBits(wifi_event_group, WIFI_FAIL_BIT);
       }
 
-      assert(xSemaphoreGive(state_mutex) == pdTRUE);
+      unlock_state();
       notify_gui_changed();
       break;
     case WIFI_EVENT_STA_CONNECTED:
@@ -181,12 +181,13 @@ static void event_handler(void *arg, esp_event_base_t event_base,
     timeStr(&t, timestr, sizeof(timestr), false);
     ESP_LOGI(TAG, "current time: %s", timestr);
 
-    assert(xSemaphoreTake(state_mutex, portMAX_DELAY) == pdTRUE);
+    lock_state();
     state.wifi.status = WIFI_STATUS_CONNECTED;
     state.wifi.ip = event->ip_info.ip;
     state.wifi.ntp_sync = true;
+    time(&state.last_touched);
     state.id = (unsigned)t; // use startup time as entry ID base
-    assert(xSemaphoreGive(state_mutex) == pdTRUE);
+    unlock_state();
     notify_gui_changed();
 
     xEventGroupSetBits(wifi_event_group, WIFI_CONNECTED_BIT);
@@ -423,12 +424,12 @@ static void handle_msg(char *data, size_t size) {
     bool enter = (bool)data[1];
     if (enter) {
       ESP_LOGI(TAG, "received sleep enter event");
-      enter_sleep = true;
+      in_enter_sleep = true;
       esp_wifi_stop();
       esp_netif_sntp_deinit();
     } else {
       ESP_LOGI(TAG, "received sleep exit event");
-      enter_sleep = false;
+      in_enter_sleep = false;
       notify_gui_changed();
       ESP_ERROR_CHECK(esp_wifi_start());
     }

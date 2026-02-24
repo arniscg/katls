@@ -2,6 +2,7 @@
 
 #include "esp_wifi.h"
 #include <inttypes.h>
+#include <time.h>
 
 // global application state used by whoever wants
 // using mutex is mandatory when accessing state
@@ -37,6 +38,7 @@ typedef struct {
   WifiState wifi;
   unsigned id;
   unsigned sleepReady;
+  time_t last_touched;
 } State;
 
 extern State state;
