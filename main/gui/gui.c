@@ -153,6 +153,7 @@ void gui_task(void *) {
         assert(item_size == 2);
         bool enter = (bool)item[1];
         gpio_set_level(PIN_NUM_LED, enter ? 0 : 1);
+        screens_go_home();
         assert(xSemaphoreTake(state_mutex, portMAX_DELAY) == pdTRUE);
         state.sleepReady |= BIT(SLEEP_READY_GUI);
         assert(xSemaphoreGive(state_mutex) == pdTRUE);

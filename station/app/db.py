@@ -89,7 +89,7 @@ def db_getall(db: sqlite3.Connection, count: int = 0):
     db.row_factory = sqlite3.Row
     cur = db.cursor()
 
-    qry = "SELECT id, time, event, data, deleted FROM events ORDER BY time DESC"
+    qry = "SELECT id, time, event, data, deleted  FROM events WHERE NOT deleted ORDER BY time DESC"
     if count:
         qry += f" LIMIT {count}"
 

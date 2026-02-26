@@ -82,3 +82,5 @@ void screens_return() {
   if (prev_screen)
     change_screen(prev_screen);
 }
+
+void screens_go_home() { change_screen((BaseScreen *)&wifi_screen); }
