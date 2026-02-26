@@ -3,29 +3,28 @@ from contextlib import asynccontextmanager
 from .db import db_init, db_get, db_add, db_mark_deleted, db_getall
 import sqlite3
 from .model import Event
+from dotenv import load_dotenv
+from fastapi.staticfiles import StaticFiles
+from fastapi.routing import Mount, APIRouter
+
+from .routes.api import router as api
+from .routes.pages import router as pages
+from .routes.htmx import router as htmx
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    load_dotenv()
     db_init()
     yield
 
 
 app = FastAPI(lifespan=lifespan)
 
+app.include_router(pages)
 
-@app.post("/events")
-def post_event(event: Event, db: sqlite3.Connection = Depends(db_get)):
-    db_add(db, event)
-    return {}
+app.include_router(htmx, prefix="/hx")
 
+app.include_router(api, prefix="/api/v1")
 
-@app.delete("/events/{event_id}")
-def delete_event(event_id: str, db: sqlite3.Connection = Depends(db_get)):
-    db_mark_deleted(db, event_id)
-    return {}
-
-
-@app.get("/events")
-def get_events(db: sqlite3.Connection = Depends(db_get)):
-    return db_getall(db)
+app.mount("/static", StaticFiles(directory="app/static"), name="static")

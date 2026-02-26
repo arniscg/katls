@@ -1,0 +1,32 @@
+<!-- <main class="container">
+    <table>
+        <thead>
+            <th scope="col">Time</th>
+            <th scope="col">Event</th>
+            <th scope="col">Data</th>
+        </thead>
+        <tbody>
+            {% for e in events %}
+            <tr>
+                <th scope="row">{{e.time}}</th>
+                <td>{{e.event}}</td>
+                <td>{{e.data}}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</main> -->
+<main class="container">
+    <table>
+        <thead>
+            <th scope="col">Entry</th>
+        </thead>
+        <tbody>
+            {% for e in events %}
+            <tr>
+                <th scope="row">{{e}}</th>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</main>

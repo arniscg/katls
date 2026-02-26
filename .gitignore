@@ -5,3 +5,4 @@ build
 __pycache__
 station/venv
 *.db
+station/.env

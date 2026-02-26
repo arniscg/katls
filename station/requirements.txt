@@ -1,1 +1,3 @@
 fastapi[standard]
+python-dotenv[cli]
+htmx

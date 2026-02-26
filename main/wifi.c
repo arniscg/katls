@@ -312,7 +312,7 @@ static esp_err_t http_event_handler(esp_http_client_event_t *evt) {
 
 static int http_post(char *data) {
   esp_http_client_config_t config = {.host = HOSTNAME,
-                                     .path = "/events",
+                                     .path = "api/v1/events",
                                      .port = 8000,
                                      .event_handler = http_event_handler};
   ESP_LOGI(TAG, "post data: %s", data);
@@ -330,7 +330,7 @@ static int http_post(char *data) {
 
 static int http_delete(unsigned id) {
   char path[64];
-  snprintf(path, sizeof(path), "/events/%u", id);
+  snprintf(path, sizeof(path), "api/v1/events/%u", id);
   ESP_LOGI(TAG, "delete path: %s", path);
   esp_http_client_config_t config = {
       .host = HOSTNAME, .path = path, .port = 8000, .event_handler = NULL};
