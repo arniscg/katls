@@ -1,32 +1,22 @@
-<!-- <main class="container">
-    <table>
-        <thead>
-            <th scope="col">Time</th>
-            <th scope="col">Event</th>
-            <th scope="col">Data</th>
-        </thead>
-        <tbody>
-            {% for e in events %}
-            <tr>
-                <th scope="row">{{e.time}}</th>
-                <td>{{e.event}}</td>
-                <td>{{e.data}}</td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-</main> -->
-<main class="container">
-    <table>
-        <thead>
-            <th scope="col">Entry</th>
-        </thead>
-        <tbody>
-            {% for e in events %}
-            <tr>
-                <th scope="row">{{e}}</th>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-</main>
+<table>
+    <thead>
+        <th scope="col">Journal</th>
+    </thead>
+    <tbody>
+        <tr>
+            <th scope="row">
+                <div hx-get="/hx/events/add" hx-trigger="load"></div>
+            </th>
+        </tr>
+        {% for e in events %}
+        <tr>
+            <th scope="row">
+                <div style="display: flex; justify-content: space-between;">
+                    {{e.event}}
+                    <button class="secondary" hx-delete="/api/v1/events/{{e.id}}" hx-trigger="click" hx-swap="none" hx-confirm="Are you sure?">Delete</button>
+                </div>
+            </th>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>

@@ -1,0 +1,14 @@
+<form hx-post="/hx/events" hx-swap="outerHTML">
+    {% if success is defined %}
+        {% if success %}
+            <label class="pico-color-jade-350">{{message}}</label>
+        {% else %}
+            <label class="pico-color-red">{{message}}</label>
+        {% endif %}
+    {% endif %}
+    <fieldset role="group">
+        <input placeholder="enter entry" name="entry" />
+        <input value="2026" name="year" style="width: 30%;" />
+        <input type="submit" value="Add" />
+    </fieldset>
+</form>

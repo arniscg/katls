@@ -53,6 +53,51 @@ def type_to_num(e: Entry):
 entry_order = [StopEntry, RestockEntry, BagsEntry, CleanEntry, TempEntry]
 
 
+def parse_str_entry(entry: str, year: int) -> list[Entry]:
+    if entry.startswith("#"):
+        return ""
+    if not len(entry):
+        return ""
+
+    parts = entry.split(" ")
+
+    time = None
+    try:
+        time = datetime.strptime(f"{parts[0]};{year}", "%d.%mT%H:%M;%Y")
+    except ValueError:
+        raise Exception("invalid date")
+    
+    if len(parts) < 2:
+        raise Exception("invalid entry")
+
+    en: list[Entry] = []
+    for part in parts[1:]:
+        part = part.strip()
+        if not len(part):
+            continue
+
+        if part[0] == "+":
+            if len(part) < 2 or len(part) > 3:
+                raise Exception("invalid bags entry")
+            en.append(BagsEntry(time, int(part[1:])))
+        elif "C" in part:
+            if len(part) != 3 or part[2] != "C":
+                raise Exception("invalid temperature entry")
+            en.append(TempEntry(time, int(part[0:2])))
+        elif part == "X":
+            en.append(StopEntry(time))
+        elif part == "P":
+            en.append(CleanEntry(time))
+        elif part[0] == "G":
+            en.append(RestockEntry(time, int(part.replace("G", "")), False))
+        elif part[0] == "R":
+            en.append(RestockEntry(time, int(part.replace("R", "")), True))
+        else:
+            raise Exception("unknown entry")
+
+    return en
+
+
 def parse_entries(journal_path: Path) -> list[Entry]:
     if not journal_path.exists():
         raise Exception("journal file doesn't exist")
@@ -90,43 +135,20 @@ def parse_entries(journal_path: Path) -> list[Entry]:
             if len(parts) < 2:
                 failed("invalid", i, line)
 
-            time = None
+            en = []
             try:
-                time = datetime.strptime(f"{parts[0]};{year}", "%d.%mT%H:%M;%Y")
-            except ValueError:
-                try:
-                    time = datetime.strptime(f"{parts[0]};{year}", "%d.%m;%Y")
-                except:
-                    failed("invalid date", i, line)
+                en = parse_str_entry(line, year)
+            except Exception as e:
+                failed(str(e), i, line)
+
+            if not len(en):
+                failed(failed, i, line)
+
+            time = en[0].time
 
             if prev_time is not None and prev_time > time:
                 failed("decreasing time", i, line)
             prev_time = time
-
-            en: list[Entry] = []
-            for part in parts[1:]:
-                part = part.strip()
-                if not len(part):
-                    continue
-
-                if part[0] == "+":
-                    if len(part) < 2 or len(part) > 3:
-                        failed("invalid bags entry", i, line)
-                    en.append(BagsEntry(time, int(part[1:])))
-                elif "C" in part:
-                    if len(part) != 3 or part[2] != "C":
-                        failed("invalid temperature entry", i, line)
-                    en.append(TempEntry(time, int(part[0:2])))
-                elif part == "X":
-                    en.append(StopEntry(time))
-                elif part == "P":
-                    en.append(CleanEntry(time))
-                elif part[0] == "G":
-                    en.append(RestockEntry(time, int(part.replace("G", "")), False))
-                elif part[0] == "R":
-                    en.append(RestockEntry(time, int(part.replace("R", "")), True))
-                else:
-                    failed("unknown entry", i, line)
 
             entries += sorted(en, key=lambda e: entry_order.index(type(e)))
 
