@@ -1,7 +1,7 @@
 #!/bin/sh
 set -e
 
-DB_PATH="/data/pechka-journal.db"
+DB_PATH="/data/pechka-journal/pechka-journal.db"
 BACKUP_DIR="/backups"
 DATE=$(date +"%F_%s")
 
