@@ -1,0 +1,40 @@
+<h3>Fuel stock</h3>
+<div class="grid">
+    <div><strong>{{ stock }}</strong> bags in storage</div>
+    <div>
+        {% if estimate.days is not none %}
+        ~{{ "%.0f"|format(estimate.days) }} days remaining
+        <br><small>at {{ "%.2f"|format(estimate.blended_rate_per_day) }} bags/day (recent + seasonal blend)</small>
+        {% else %}
+        not enough data yet to estimate
+        {% endif %}
+    </div>
+</div>
+<canvas id="stock-chart" height="120"></canvas>
+<script>
+(function () {
+    const canvas = document.getElementById('stock-chart');
+    if (canvas.chart) canvas.chart.destroy();
+    const points = {{ timeline | tojson }};
+    canvas.chart = new Chart(canvas, {
+        type: 'line',
+        data: {
+            datasets: [{
+                label: 'Storage stock (bags)',
+                data: points.map(p => ({ x: p.time * 1000, y: p.stock })),
+                stepped: 'before',
+                pointBackgroundColor: points.map(p => p.event === 'restock' ? '#2ecc71' : '#e67e22'),
+                pointRadius: 4,
+                borderColor: '#3498db',
+            }]
+        },
+        options: {
+            scales: {
+                x: { type: 'linear', ticks: { callback: v => new Date(v).toLocaleDateString() } },
+                y: { title: { display: true, text: 'bags' } }
+            }
+        }
+    });
+})();
+</script>
+<p><small><span style="color:#2ecc71">green</span> = restock, <span style="color:#e67e22">orange</span> = fed into stove</small></p>

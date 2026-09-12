@@ -1,0 +1,27 @@
+<h3>Fuel consumption (bags per day of runtime, per batch)</h3>
+<canvas id="consumption-chart" height="120"></canvas>
+<script>
+(function () {
+    const canvas = document.getElementById('consumption-chart');
+    if (canvas.chart) canvas.chart.destroy();
+    const series = {{ series | tojson }};
+    canvas.chart = new Chart(canvas, {
+        type: 'line',
+        data: {
+            datasets: [{
+                label: 'bags/day',
+                data: series.map(p => ({ x: p.start * 1000, y: p.bags_per_day })),
+                pointBackgroundColor: series.map(p => p.provisional ? '#e74c3c' : '#3498db'),
+                borderColor: '#3498db',
+            }]
+        },
+        options: {
+            scales: {
+                x: { type: 'linear', ticks: { callback: v => new Date(v).toLocaleDateString() } },
+                y: { title: { display: true, text: 'bags/day' } }
+            }
+        }
+    });
+})();
+</script>
+<p><small><span style="color:#e74c3c">red point</span> = current in-progress batch (provisional estimate)</small></p>

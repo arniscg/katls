@@ -1,0 +1,23 @@
+<h3>Data quality flags</h3>
+{% if flags %}
+<table>
+    <thead>
+        <tr>
+            <th>Type</th>
+            <th>When</th>
+            <th>Note</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for f in flags %}
+        <tr>
+            <td>{{ f.type }}</td>
+            <td>{{ f.start_str }}{% if f.end_str %} &ndash; {{ f.end_str }}{% endif %}</td>
+            <td>{{ f.message }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p>No data-quality issues detected.</p>
+{% endif %}

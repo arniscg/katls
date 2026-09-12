@@ -1,0 +1,45 @@
+<h3>Season comparison (cumulative bags consumed)</h3>
+<div id="season-toggles">
+    {% for s in series %}
+    <label style="margin-right: 1em;">
+        <input type="checkbox" checked data-season-index="{{ loop.index0 }}" onchange="katlsToggleSeason(this)">
+        {{ s.label }}
+    </label>
+    {% endfor %}
+</div>
+<canvas id="seasons-chart" height="150"></canvas>
+<script>
+(function () {
+    const canvas = document.getElementById('seasons-chart');
+    if (canvas.chart) canvas.chart.destroy();
+    const series = {{ series | tojson }};
+    const colors = ['#3498db', '#e67e22', '#2ecc71', '#e74c3c', '#9b59b6'];
+    const fmtDate = v => new Date(v).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    canvas.chart = new Chart(canvas, {
+        type: 'line',
+        data: {
+            datasets: series.map((s, i) => ({
+                label: s.label,
+                data: s.points.map(p => ({ x: p.calendar_ts * 1000, y: p.cumulative })),
+                borderColor: colors[i % colors.length],
+                backgroundColor: 'transparent',
+                pointRadius: 0,
+            }))
+        },
+        options: {
+            scales: {
+                x: { type: 'linear', title: { display: true, text: 'date' }, ticks: { callback: fmtDate } },
+                y: { title: { display: true, text: 'cumulative bags' } }
+            },
+            plugins: {
+                tooltip: { callbacks: { title: items => fmtDate(items[0].parsed.x) } }
+            }
+        }
+    });
+    window.katlsToggleSeason = function (el) {
+        const idx = parseInt(el.dataset.seasonIndex);
+        canvas.chart.setDatasetVisibility(idx, el.checked);
+        canvas.chart.update();
+    };
+})();
+</script>

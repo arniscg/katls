@@ -1,0 +1,55 @@
+<h3>Status</h3>
+{% if last_event_age_days is not none %}
+<p><small>Last event: {{ "%.1f"|format(last_event_age_days) }} days ago</small></p>
+{% endif %}
+<div class="grid">
+    <div>
+        <strong>{{ "Running" if status.running else "Idle" }}</strong>
+        {% if status.running and status.target_temp is not none %}
+        <div>target {{ status.target_temp }}&deg;C</div>
+        {% endif %}
+        {% if status.running and status.cycle_duration_hours is not none %}
+        <div><small>cycle running {{ status.cycle_duration_hours|hours_str }}</small></div>
+        {% endif %}
+    </div>
+    <div>
+        <strong>Storage stock</strong>
+        <div>{{ stock }} bags</div>
+    </div>
+    <div>
+        <strong>Hopper (container)</strong>
+        <div>
+            {% if hopper.bags_remaining is not none %}
+            ~{{ "%.1f"|format(hopper.bags_remaining) }} bags
+            {% if hopper.provisional %}<small>(estimated)</small>{% endif %}
+            {% if hopper.hours_remaining is not none %}
+            <div><small>~{{ hopper.hours_remaining|hours_str }} of burn time left{% if not status.running %} (if lit now){% endif %}</small></div>
+            {% endif %}
+            {% else %}
+            unknown
+            {% endif %}
+        </div>
+    </div>
+    <div>
+        <strong>Cleaning</strong>
+        <div>
+            {% if cleaning.days_since is not none %}
+            {{ "%.1f"|format(cleaning.days_since) }} days since last
+            {% if cleaning.overdue %}<mark>overdue</mark>{% endif %}
+            {% else %}
+            no cleaning logged
+            {% endif %}
+        </div>
+    </div>
+    <div>
+        <strong>Fuel consumption</strong>
+        <div>
+            {% if consumption.bags_per_day is not none %}
+            ~{{ "%.2f"|format(consumption.bags_per_day) }} bags/day
+            {% if consumption.provisional %}<small>(estimated)</small>{% endif %}
+            {% else %}
+            unknown
+            {% endif %}
+        </div>
+    </div>
+</div>

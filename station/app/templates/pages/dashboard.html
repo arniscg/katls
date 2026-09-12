@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Katls - Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/htmx.org@2.0.8/dist/htmx.min.js"
+        integrity="sha384-/TgkGk7p307TH7EXJDuUlgG3Ce1UVolAOFopFekQkkXihi5u/6OCvVKyz1W+idaz"
+        crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.colors.min.css">
+    <script>
+        const KATLS_DEFAULT_RANGE = "month";
+        async function katlsSetRange(range) {
+            document.querySelectorAll('#range-selector button').forEach(b => {
+                b.classList.toggle('contrast', b.dataset.period === range);
+            });
+            // Firing all three htmx.ajax() calls in the same tick drops one of
+            // them (an htmx internal race) - awaiting each in turn avoids it.
+            for (const name of ['stock', 'consumption', 'cleaning']) {
+                await htmx.ajax('GET', '/hx/dashboard/' + name + '?period=' + range, {
+                    target: '#' + name + '-section',
+                    swap: 'innerHTML',
+                });
+            }
+        }
+    </script>
+</head>
+
+<body>
+    {% set active = "dashboard" %}
+    {% include "partials/nav.html" %}
+    <main class="container">
+        <article hx-get="/hx/dashboard/status" hx-trigger="load" hx-swap="innerHTML"></article>
+
+        <div role="group" id="range-selector">
+            <button data-period="day" onclick="katlsSetRange('day')">Day</button>
+            <button data-period="week" onclick="katlsSetRange('week')">Week</button>
+            <button data-period="month" class="contrast" onclick="katlsSetRange('month')">Month</button>
+            <button data-period="season" onclick="katlsSetRange('season')">Season</button>
+        </div>
+        <p><small>Applies to the charts below (not the season comparison, which always shows full seasons).</small></p>
+
+        <article id="stock-section" hx-get="/hx/dashboard/stock?period=month" hx-trigger="load" hx-swap="innerHTML"></article>
+        <article id="consumption-section" hx-get="/hx/dashboard/consumption?period=month" hx-trigger="load" hx-swap="innerHTML"></article>
+        <article id="cleaning-section" hx-get="/hx/dashboard/cleaning?period=month" hx-trigger="load" hx-swap="innerHTML"></article>
+
+        <article hx-get="/hx/dashboard/seasons" hx-trigger="load" hx-swap="innerHTML"></article>
+        <article hx-get="/hx/dashboard/quality" hx-trigger="load" hx-swap="innerHTML"></article>
+    </main>
+</body>
+
+</html>

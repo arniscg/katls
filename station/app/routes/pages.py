@@ -7,4 +7,4 @@ templates = Jinja2Templates(directory="app/templates")
 
 @router.get("/")
 def home(request: Request):
-    return templates.TemplateResponse(request, "pages/home.html")
+    return templates.TemplateResponse(request, "pages/home.html", context={"active": "journal"})

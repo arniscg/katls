@@ -85,6 +85,13 @@ def db_mark_deleted(db: sqlite3.Connection, event_id: str):
     db.commit()
 
 
+def db_get_events_for_analytics(db: sqlite3.Connection) -> list[dict]:
+    db.row_factory = sqlite3.Row
+    cur = db.cursor()
+    cur.execute("SELECT id, time, event, data FROM events WHERE NOT deleted ORDER BY time ASC")
+    return [dict(row) for row in cur.fetchall()]
+
+
 def db_getall(db: sqlite3.Connection, count: int = 0):
     db.row_factory = sqlite3.Row
     cur = db.cursor()
