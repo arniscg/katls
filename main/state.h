@@ -1,8 +1,27 @@
 #pragma once
 
-#include "esp_wifi.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include <inttypes.h>
 #include <time.h>
+
+#if CONFIG_IDF_TARGET_LINUX
+// Desktop simulator build: no real esp_wifi/esp_netif stack. These mirror
+// just the fields the GUI code (wifi_screen.c) actually reads.
+typedef struct {
+  uint8_t ssid[32];
+  uint8_t password[64];
+} wifi_sta_config_t;
+typedef struct {
+  uint32_t addr;
+} esp_ip4_addr_t;
+#define IPSTR "%d.%d.%d.%d"
+#define IP2STR(ipaddr)                                                       \
+  ((uint8_t *)&(ipaddr)->addr)[0], ((uint8_t *)&(ipaddr)->addr)[1],           \
+      ((uint8_t *)&(ipaddr)->addr)[2], ((uint8_t *)&(ipaddr)->addr)[3]
+#else
+#include "esp_wifi.h"
+#endif
 
 // global application state used by whoever wants
 // using mutex is mandatory when accessing state

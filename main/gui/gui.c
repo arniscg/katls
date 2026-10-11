@@ -1,14 +1,137 @@
-#include "gui.h"
+#include "../buttons.h"
+#include "../common.h"
 #include "../state.h"
-#include "driver/gpio.h"
-#include "driver/spi_master.h"
+#include "esp_bit_defs.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/ringbuf.h"
+#include "gui.h"
 #include "lvgl.h"
 #include "screen/screens.h"
 #include "screen/wifi_screen.h"
+#include "sdkconfig.h"
 #include <unistd.h>
+
+#if CONFIG_IDF_TARGET_LINUX
+#include <SDL2/SDL.h>
+#include "../wifi.h"
+#include "freertos/semphr.h"
+#include "freertos/task.h"
+#else
+#include "driver/gpio.h"
+#include "driver/spi_master.h"
+#endif
+
+static uint32_t lv_tick_cb(void) { return (uint32_t)xTaskGetTickCount(); }
+
+static const char *TAG = "GUI";
+
+RingbufHandle_t gui_buf_handle;
+
+#if CONFIG_IDF_TARGET_LINUX
+
+// Desktop simulator: no real display/buttons, so LVGL renders into an SDL
+// window and keyboard keys stand in for the physical buttons. The power
+// button is handled by a dedicated task (mirroring the real board, where
+// it's a separate button task) since calling enter_sleep() directly from
+// this SDL callback - itself invoked from inside gui_task's own timer
+// handling - would deadlock waiting on gui_task to process its own
+// GUI_EVT_SLEEP message.
+static SemaphoreHandle_t power_sem;
+
+static void power_sim_task(void *arg) {
+  while (1) {
+    if (xSemaphoreTake(power_sem, portMAX_DELAY) == pdTRUE)
+      enter_sleep();
+  }
+}
+
+static int sdl_key_watch(void *userdata, SDL_Event *event) {
+  if (event->type != SDL_KEYDOWN || event->key.repeat)
+    return 0;
+
+  uint8_t but;
+  switch (event->key.keysym.sym) {
+  case SDLK_1:
+    but = BUTTON_F1;
+    break;
+  case SDLK_2:
+    but = BUTTON_F2;
+    break;
+  case SDLK_3:
+    but = BUTTON_F3;
+    break;
+  case SDLK_4:
+    but = BUTTON_F4;
+    break;
+  case SDLK_RETURN:
+    but = BUTTON_OK;
+    break;
+  case SDLK_ESCAPE:
+    but = BUTTON_CANCEL;
+    break;
+  case SDLK_RIGHT:
+    but = BUTTON_FORWARD;
+    break;
+  case SDLK_LEFT:
+    but = BUTTON_BACK;
+    break;
+  case SDLK_p:
+    but = BUTTON_POWER;
+    break;
+  default:
+    return 0;
+  }
+
+  if (but == BUTTON_POWER) {
+    xSemaphoreGive(power_sem);
+    return 0;
+  }
+
+  char msg[2] = {GUI_EVT_BUTTON_PRESSED, but};
+  if (xRingbufferSend(gui_buf_handle, msg, sizeof(msg), 0) != pdTRUE)
+    ESP_LOGE(TAG, "failed to send simulated button press");
+  return 0;
+}
+
+static lv_display_t *display_init() {
+  ESP_LOGI(TAG, "simulator: opening SDL window");
+  // The real panel is natively portrait and gets rotated 90° in software
+  // (see the hardware branch below); lv_disp_set_rotation() on the SDL
+  // driver reorients content without resizing the window to match, so
+  // instead just open the window already in the rotated (landscape) shape.
+  lv_display_t *display = lv_sdl_window_create(TFT_V_RES, TFT_H_RES);
+  lv_sdl_window_set_title(display, "Katls simulator");
+  lv_sdl_window_set_zoom(display, 3);
+  lv_sdl_mouse_create();
+
+  power_sem = xSemaphoreCreateBinary();
+  xTaskCreate(power_sim_task, "PowerSim", 64 * 1024, NULL, 2, NULL);
+  SDL_AddEventWatch(sdl_key_watch, NULL);
+
+  // Buttons are ignored by the GUI until wifi.status == CONNECTED (see
+  // screens_on_event). There's no real network in the simulator, so fake an
+  // immediate connection here rather than relying on wifi_task to do it -
+  // wifi_task runs at the same priority as this task and may not get
+  // scheduled for a while once this task is busy with SDL/X11 calls.
+  lock_state();
+  state.wifi.status = WIFI_STATUS_CONNECTED;
+  state.wifi.ntp_sync = true;
+  unlock_state();
+
+  // Same reasoning: journal.c sends onto wifi_buf_handle as soon as an entry
+  // is created, which can happen (via simulated button presses) before
+  // wifi_task has been scheduled to create it. Create it here instead so
+  // it's always ready by the time the event loop below can act on anything.
+  wifi_buf_handle = xRingbufferCreate(1024, RINGBUF_TYPE_NOSPLIT);
+  assert(wifi_buf_handle != NULL);
+
+  ESP_LOGI(TAG, "keys: 1-4=F1-F4  Enter=OK  Esc=Cancel  Right=Forward  "
+                "Left=Back  P=Power/Sleep");
+  return display;
+}
+
+#else
 
 #define TFT_HOST SPI3_HOST
 
@@ -19,9 +142,6 @@
 #define PIN_NUM_RST 15
 #define PIN_NUM_LED 22
 
-static const char *TAG = "GUI";
-
-RingbufHandle_t gui_buf_handle;
 static spi_device_handle_t spi;
 
 static void tft_send_cmd(lv_display_t *disp, const uint8_t *cmd,
@@ -97,12 +217,7 @@ static void spi_init() {
   ESP_ERROR_CHECK(ret);
 }
 
-void gui_task(void *) {
-  ESP_LOGI(TAG, "started GUI task");
-
-  gui_buf_handle = xRingbufferCreate(8192, RINGBUF_TYPE_NOSPLIT);
-  assert(gui_buf_handle != NULL);
-
+static lv_display_t *display_init() {
   ESP_LOGI(TAG, "enable display LED");
   const gpio_config_t conf = {
       .mode = GPIO_MODE_OUTPUT,
@@ -119,9 +234,6 @@ void gui_task(void *) {
   gpio_set_level(PIN_NUM_RST, 1);
   vTaskDelay(100 / portTICK_PERIOD_MS);
 
-  lv_init();
-  lv_tick_set_cb(xTaskGetTickCount);
-
   ESP_LOGI(TAG, "setup the display");
   lv_display_t *display = lv_st7735_create(
       TFT_H_RES, TFT_V_RES, LV_LCD_FLAG_NONE, tft_send_cmd, tft_send_color);
@@ -136,6 +248,21 @@ void gui_task(void *) {
 
   lv_display_set_buffers(display, buf, NULL, buf_size,
                          LV_DISPLAY_RENDER_MODE_FULL);
+  return display;
+}
+
+#endif
+
+void gui_task(void *) {
+  ESP_LOGI(TAG, "started GUI task");
+
+  gui_buf_handle = xRingbufferCreate(8192, RINGBUF_TYPE_NOSPLIT);
+  assert(gui_buf_handle != NULL);
+
+  lv_init();
+  lv_tick_set_cb(lv_tick_cb);
+
+  display_init();
 
   ESP_LOGI(TAG, "Started GUI task loop");
 
@@ -151,8 +278,10 @@ void gui_task(void *) {
         break;
       if (item[0] == GUI_EVT_SLEEP) {
         assert(item_size == 2);
+#if !CONFIG_IDF_TARGET_LINUX
         bool enter = (bool)item[1];
         gpio_set_level(PIN_NUM_LED, enter ? 0 : 1);
+#endif
         screens_go_home();
         assert(xSemaphoreTake(state_mutex, portMAX_DELAY) == pdTRUE);
         state.sleepReady |= BIT(SLEEP_READY_GUI);

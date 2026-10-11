@@ -15,5 +15,11 @@ dependencies:
   #   # All dependencies of `main` are public by default.
   #   public: true
   lvgl/lvgl: 9.4.0
-  espressif/button: ^4.1.4
-  espressif/qrcode: ^0.1.0~2
+  espressif/button:
+    version: ^4.1.4
+    rules:
+      - if: "target not in [linux]"
+  espressif/qrcode:
+    version: ^0.1.0~2
+    rules:
+      - if: "target not in [linux]"

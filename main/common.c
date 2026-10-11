@@ -2,9 +2,12 @@
 #include "gui/gui.h"
 #include "state.h"
 #include "wifi.h"
+#include <esp_bit_defs.h>
 #include <esp_err.h>
 #include <esp_log.h>
+#if !CONFIG_IDF_TARGET_LINUX
 #include <esp_sleep.h>
+#endif
 
 static const char *TAG = "COMMON";
 
@@ -53,11 +56,15 @@ void enter_sleep() {
     vTaskDelay(pdMS_TO_TICKS(500));
     s = get_sleep_state();
   }
+#if CONFIG_IDF_TARGET_LINUX
+  ESP_LOGI(TAG, "simulator: skipping real light sleep, waking immediately");
+#else
   esp_err_t err = esp_light_sleep_start();
   if (err != ESP_OK)
     ESP_LOGE(TAG, "esp_light_sleep_start failed: %s", esp_err_to_name(err));
   else
     ESP_LOGI(TAG, "wake-up from light sleep");
+#endif
 
   ESP_LOGI(TAG, "exiting sleep mode");
   msg[1] = 0;

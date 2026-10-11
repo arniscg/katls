@@ -1,6 +1,7 @@
 #include "journal_screen.h"
 #include "../../buttons.h"
 #include "../../journal.h"
+#include "../theme.h"
 #include <esp_log.h>
 
 static const char *TAG = "journal_screen";
@@ -17,6 +18,7 @@ static void update_list(JournalScreen *s) {
     lv_obj_delete(s->list);
   s->list = lv_list_create(s->base.root);
   lv_obj_set_size(s->list, lv_pct(100), lv_pct(100));
+  lv_obj_set_style_radius(s->list, 0, LV_PART_MAIN);
 
   for (int i = n_entries - 1; i >= 0; --i) {
     ESP_LOGI(TAG, "update_list: %u", i);
@@ -28,16 +30,16 @@ static void update_list(JournalScreen *s) {
     lv_color_t color;
     switch (entries[i]->state) {
     case ENTRY_STATE_INIT:
-      color = lv_color_hex(0x808080);
+      color = lv_color_lighten(KATLS_COLOR_GRAY, 140);
       break;
     case ENTRY_STATE_STORING:
-      color = lv_color_hex(0xf5ff87);
+      color = lv_color_lighten(KATLS_COLOR_ORANGE, 140);
       break;
     case ENTRY_STATE_STORE_FAILED:
-      color = lv_color_hex(0xcf5555);
+      color = lv_color_lighten(KATLS_COLOR_RED, 100);
       break;
     case ENTRY_STATE_STORED:
-      color = lv_color_hex(0xbcffad);
+      color = lv_color_lighten(KATLS_COLOR_GREEN, 140);
       break;
     default:
       break;

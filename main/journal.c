@@ -2,11 +2,10 @@
 #include "common.h"
 #include "esp_err.h"
 #include "esp_log.h"
-#include "esp_vfs.h"
-#include "esp_vfs_fat.h"
 #include "gui/gui.h"
 #include "state.h"
 #include "wifi.h"
+#include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -279,10 +278,10 @@ void entry_store(BaseEntry *e) {
 
   if (strlen(data)) {
     snprintf(req, sizeof(req),
-             "{\"id\":\"%u\",\"time\":%llu,\"event\":\"%s\",\"data\":\"%s\"}",
+             "{\"id\":\"%u\",\"time\":%" PRIu64 ",\"event\":\"%s\",\"data\":\"%s\"}",
              e->id, e->time, name, data);
   } else {
-    snprintf(req, sizeof(req), "{\"id\":\"%u\",\"time\":%llu,\"event\":\"%s\"}",
+    snprintf(req, sizeof(req), "{\"id\":\"%u\",\"time\":%" PRIu64 ",\"event\":\"%s\"}",
              e->id, e->time, name);
   }
 

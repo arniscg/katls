@@ -7,7 +7,9 @@
 #include "buttons.h"
 #include "common.h"
 #include "esp_err.h"
+#if !CONFIG_IDF_TARGET_LINUX
 #include "esp_flash.h"
+#endif
 #include "esp_log.h"
 #include "esp_system.h"
 #include "freertos/FreeRTOS.h"
@@ -27,10 +29,19 @@
 #include <time.h>
 #include <unistd.h>
 
+#if CONFIG_IDF_TARGET_LINUX
+// SDL/X11 call stacks are far deeper than the real embedded display driver's.
+#define GUI_TASK_STACK_SIZE (256 * 1024)
+#else
 #define GUI_TASK_STACK_SIZE (4 * 1024)
+#endif
 #define GUI_TASK_PRIORITY 2
 
+#if CONFIG_IDF_TARGET_LINUX
+#define WIFI_TASK_STACK_SIZE (64 * 1024)
+#else
 #define WIFI_TASK_STACK_SIZE (4 * 1024)
+#endif
 #define WIFI_TASK_PRIORITY 2
 
 #define IDLE_TIME 30
@@ -75,6 +86,9 @@ static const char *reset_reason_str(esp_reset_reason_t r) {
 }
 
 void app_main(void) {
+#if CONFIG_IDF_TARGET_LINUX
+  setvbuf(stdout, NULL, _IONBF, 0); // simulator: don't buffer log output
+#endif
   ESP_LOGI(TAG, "app_main");
   ESP_LOGI(TAG, "reset reason: %s", reset_reason_str(esp_reset_reason()));
 

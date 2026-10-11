@@ -2,11 +2,15 @@
 #include "../../buttons.h"
 #include "../../journal.h"
 #include "../../wifi.h"
+#include "../theme.h"
 #include "screens.h"
 #include <esp_log.h>
 
 static const char *TAG = "input_screen";
 
+// lbl_value's bigger/colored style is only meaningful for an actual
+// user-adjustable value (temperature, bag count) - clean/stop are single
+// fixed phrases, not a value to emphasize, so lbl_value is hidden for them.
 static void update(InputScreen *s) {
   switch (s->state) {
   case INPUT_TEMP: {
@@ -14,6 +18,7 @@ static void update(InputScreen *s) {
     lv_snprintf(str, 4, "%dC", s->temp);
     lv_label_set_text(s->lbl_prompt, "set temperature:");
     lv_label_set_text(s->lbl_value, str);
+    lv_obj_remove_flag(s->lbl_value, LV_OBJ_FLAG_HIDDEN);
     break;
   }
   case INPUT_BAGS: {
@@ -21,20 +26,16 @@ static void update(InputScreen *s) {
     lv_snprintf(str, 3, "%d", s->bags);
     lv_label_set_text(s->lbl_prompt, "added bags:");
     lv_label_set_text(s->lbl_value, str);
+    lv_obj_remove_flag(s->lbl_value, LV_OBJ_FLAG_HIDDEN);
     break;
   }
   case INPUT_CLEAN:
-    lv_label_set_text(s->lbl_prompt, "cleaning");
-    lv_label_set_text(s->lbl_value, "done");
+    lv_label_set_text(s->lbl_prompt, "clean pechka");
+    lv_obj_add_flag(s->lbl_value, LV_OBJ_FLAG_HIDDEN);
     break;
   case INPUT_STOP:
-    lv_label_set_text(s->lbl_prompt, "stop");
-    lv_label_set_text(s->lbl_value, "pechka");
-    break;
-  case INPUT_JOURNAL_ADD:
-    lv_obj_set_style_bg_color(s->cont, lv_color_hex(0x00FF00), LV_PART_MAIN);
-    lv_label_set_text(s->lbl_prompt, "adding to");
-    lv_label_set_text(s->lbl_value, "journal ...");
+    lv_label_set_text(s->lbl_prompt, "stop pechka");
+    lv_obj_add_flag(s->lbl_value, LV_OBJ_FLAG_HIDDEN);
     break;
   default:
     break;
@@ -190,5 +191,10 @@ void screen_input_init(InputScreen *s) {
                         LV_FLEX_ALIGN_CENTER);
 
   s->lbl_prompt = lv_label_create(s->cont);
+
   s->lbl_value = lv_label_create(s->cont);
+  lv_obj_set_style_text_font(s->lbl_value, &lv_font_montserrat_24,
+                             LV_PART_MAIN);
+  lv_obj_set_style_text_color(s->lbl_value, KATLS_COLOR_BLUE, LV_PART_MAIN);
+  lv_obj_set_style_pad_top(s->lbl_value, 4, LV_PART_MAIN);
 }

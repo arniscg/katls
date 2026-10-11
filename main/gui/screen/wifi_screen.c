@@ -2,6 +2,7 @@
 #include "../../common.h"
 #include "../../state.h"
 #include "../gui.h"
+#include "../theme.h"
 #include <esp_log.h>
 
 static const char *TAG = "wifi_screen";
@@ -88,6 +89,8 @@ static void update(WifiScreen *s) {
       s->lbl_state = lv_label_create(s->cont);
 
     lv_label_set_text(s->lbl_state, "Connecting");
+    lv_obj_set_style_text_color(s->lbl_state, KATLS_COLOR_ORANGE,
+                                LV_PART_MAIN);
     if (!s->lbl_ssid)
       s->lbl_ssid = lv_label_create(s->cont);
     lv_label_set_text(s->lbl_ssid, (char *)state.wifi.conf.ssid);
@@ -96,6 +99,8 @@ static void update(WifiScreen *s) {
     if (!s->lbl_state)
       s->lbl_state = lv_label_create(s->cont);
     lv_label_set_text(s->lbl_state, "Connected");
+    lv_obj_set_style_text_color(s->lbl_state, KATLS_COLOR_GREEN,
+                                LV_PART_MAIN);
     if (!s->lbl_ssid)
       s->lbl_ssid = lv_label_create(s->cont);
     lv_label_set_text(s->lbl_ssid, (char *)state.wifi.conf.ssid);
@@ -109,6 +114,7 @@ static void update(WifiScreen *s) {
     if (!s->lbl_state)
       s->lbl_state = lv_label_create(s->cont);
     lv_label_set_text(s->lbl_state, "Failed");
+    lv_obj_set_style_text_color(s->lbl_state, KATLS_COLOR_RED, LV_PART_MAIN);
     break;
   default:
     break;

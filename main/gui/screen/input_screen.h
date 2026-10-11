@@ -15,7 +15,6 @@ typedef struct {
     INPUT_BAGS,
     INPUT_CLEAN,
     INPUT_STOP,
-    INPUT_JOURNAL_ADD,
   } state;
 
   int temp;
