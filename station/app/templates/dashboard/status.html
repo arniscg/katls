@@ -44,12 +44,17 @@
     <div>
         <strong>Fuel consumption</strong>
         <div>
-            {% if consumption.bags_per_day is not none %}
-            ~{{ "%.2f"|format(consumption.bags_per_day) }} bags/day
-            {% if consumption.provisional %}<small>(estimated)</small>{% endif %}
+            {% if consumption.last_7_days is not none %}
+            ~{{ "%.2f"|format(consumption.last_7_days) }} bags/day <small>(last 7 days)</small>
             {% else %}
             unknown
             {% endif %}
         </div>
+        {% if consumption.season is not none %}
+        <div><small>~{{ "%.2f"|format(consumption.season) }} bags/day season average</small></div>
+        {% endif %}
+        {% if consumption.burn.bags_per_hour is not none %}
+        <div><small>burn rate ~{{ "%.3f"|format(consumption.burn.bags_per_hour) }} bags/h{% if consumption.burn.provisional %} (estimated){% endif %}</small></div>
+        {% endif %}
     </div>
 </div>

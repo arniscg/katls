@@ -2,10 +2,13 @@
 #include "gui/gui.h"
 #include "state.h"
 #include "wifi.h"
+#include <esp_err.h>
 #include <esp_log.h>
 #include <esp_sleep.h>
 
 static const char *TAG = "COMMON";
+
+static bool sleep_in_progress = false;
 
 size_t timeStr(time_t *now, char *buf, size_t len, bool sh) {
   struct tm timeinfo;
@@ -26,6 +29,12 @@ static unsigned get_sleep_state() {
 
 void enter_sleep() {
   lock_state();
+  if (sleep_in_progress) {
+    unlock_state();
+    ESP_LOGW(TAG, "enter_sleep: already sleeping/entering, ignoring");
+    return;
+  }
+  sleep_in_progress = true;
   state.sleepReady = 0;
   unlock_state();
 
@@ -44,8 +53,11 @@ void enter_sleep() {
     vTaskDelay(pdMS_TO_TICKS(500));
     s = get_sleep_state();
   }
-  ESP_ERROR_CHECK(esp_light_sleep_start());
-  ESP_LOGI(TAG, "wake-up from light sleep");
+  esp_err_t err = esp_light_sleep_start();
+  if (err != ESP_OK)
+    ESP_LOGE(TAG, "esp_light_sleep_start failed: %s", esp_err_to_name(err));
+  else
+    ESP_LOGI(TAG, "wake-up from light sleep");
 
   ESP_LOGI(TAG, "exiting sleep mode");
   msg[1] = 0;
@@ -58,6 +70,7 @@ void enter_sleep() {
 
   assert(xSemaphoreTake(state_mutex, portMAX_DELAY) == pdTRUE);
   state.sleepReady = 0;
+  sleep_in_progress = false;
   assert(xSemaphoreGive(state_mutex) == pdTRUE);
 }
 

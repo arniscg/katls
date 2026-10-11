@@ -15,6 +15,11 @@ fuel). The most recent batch has no closing add-bags event yet, so its true
 rate is unknown; we use a provisional rate (weighted average of the last few
 closed batches) for it and flag every number derived from it as provisional.
 
+That per-batch rate is a burn-efficiency figure (bags per hour of burn).
+What the household actually spends is bags per calendar day: the rate is
+applied to each on-period (see build_segments) and the result summed per
+calendar day or window, idle time included (see daily_consumption).
+
 A cycle longer than ANOMALY_CYCLE_SECONDS almost certainly means a missing
 `off` event rather than a real multi-week burn; such cycles are excluded
 from rate calculations and surfaced as data-quality flags instead.
@@ -292,7 +297,7 @@ def cumulative_by_season_day(segments: list[Segment], seasons: list[dict]) -> li
 
 
 def consumption_series(batches: list[Batch]) -> list[dict]:
-    """Bags/day (of runtime) for each batch that has a known rate, in time order."""
+    """Bags per hour of burn for each batch that has a known rate, in time order."""
     out = []
     for b in batches:
         if b.rate is None:
@@ -301,7 +306,7 @@ def consumption_series(batches: list[Batch]) -> list[dict]:
             {
                 "start": b.start,
                 "label": datetime.fromtimestamp(b.start).strftime("%Y-%m-%d"),
-                "bags_per_day": b.rate * 86400,
+                "bags_per_hour": b.rate * 3600,
                 "provisional": b.provisional,
             }
         )
@@ -309,11 +314,80 @@ def consumption_series(batches: list[Batch]) -> list[dict]:
 
 
 def current_consumption(batches: list[Batch]) -> dict:
-    """Bags/day at the current (most recent) batch's rate - the same rate the fuel consumption chart plots."""
+    """Bags per hour of burn at the current (most recent) batch's rate - the same rate the burn rate chart plots."""
     if not batches or batches[-1].rate is None:
-        return {"bags_per_day": None, "provisional": False}
+        return {"bags_per_hour": None, "provisional": False}
     last = batches[-1]
-    return {"bags_per_day": last.rate * 86400, "provisional": last.provisional}
+    return {"bags_per_hour": last.rate * 3600, "provisional": last.provisional}
+
+
+def day_start(ts: float) -> float:
+    d = datetime.fromtimestamp(ts)
+    return datetime(d.year, d.month, d.day).timestamp()
+
+
+def next_day_start(ts: float) -> float:
+    d = datetime.fromtimestamp(ts)
+    return (datetime(d.year, d.month, d.day) + timedelta(days=1)).timestamp()
+
+
+def bags_in_window(segments: list[Segment], lo: float, hi: float) -> dict:
+    """
+    Bags burned in [lo, hi), with segments that straddle an edge counted
+    proportionally to their overlap. `provisional` is the part of the total
+    that comes from the open batch's estimated rate.
+    """
+    total = 0.0
+    provisional = 0.0
+    for s in segments:
+        if not s.amount:
+            continue
+        a, b = max(s.start, lo), min(s.end, hi)
+        if b <= a:
+            continue
+        part = s.amount * (b - a) / s.duration
+        total += part
+        if s.batch and s.batch.provisional:
+            provisional += part
+    return {"total": total, "provisional": provisional}
+
+
+def daily_consumption(segments: list[Segment], start: float, now: float, avg_days: int = 7) -> list[dict]:
+    """
+    One entry per local calendar day from start's day through today: bags
+    burned that day (known/provisional split) and the trailing `avg_days`
+    calendar-time average ending at the end of that day (or `now` for today).
+    """
+    out = []
+    day = day_start(start)
+    while day < now:
+        end = next_day_start(day)
+        b = bags_in_window(segments, day, end)
+        avg_end = min(end, now)
+        avg = bags_in_window(segments, avg_end - avg_days * 86400, avg_end)["total"] / avg_days
+        out.append(
+            {
+                "day": day,
+                "label": datetime.fromtimestamp(day).strftime("%Y-%m-%d"),
+                "known": b["total"] - b["provisional"],
+                "provisional": b["provisional"],
+                "avg": avg,
+                "partial": end > now,
+            }
+        )
+        day = end
+    return out
+
+
+def season_rate_per_day(segments: list[Segment], seasons: list[dict], now: float) -> float | None:
+    """Average bags per calendar day since the current season started."""
+    if not seasons:
+        return None
+    start = seasons[-1]["start"]
+    days = (now - start) / 86400
+    if days <= 0:
+        return None
+    return bags_in_window(segments, start, now)["total"] / days
 
 
 def stock_timeline(events: list[dict]) -> list[dict]:
@@ -341,9 +415,7 @@ def current_stock(events: list[dict]) -> int:
 
 
 def recent_rate_per_day(segments: list[Segment], now: float, window_days: int = 21) -> float:
-    window_start = now - window_days * 86400
-    total = sum(s.amount for s in segments if s.amount and s.start >= window_start and s.start < now)
-    return total / window_days
+    return bags_in_window(segments, now - window_days * 86400, now)["total"] / window_days
 
 
 def seasonal_rate_per_day(

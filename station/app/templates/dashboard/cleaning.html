@@ -26,7 +26,7 @@
         },
         options: {
             scales: {
-                x: { type: 'linear', ticks: { callback: v => new Date(v).toLocaleDateString() } },
+                x: { type: 'linear', {% if x_min %}min: {{ x_min * 1000 }}, max: {{ x_max * 1000 }}, {% endif %}ticks: { callback: v => new Date(v).toLocaleDateString() } },
                 y: { title: { display: true, text: 'days' } }
             }
         }

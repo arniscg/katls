@@ -1,24 +1,75 @@
-<h3>Fuel consumption (bags per day of runtime, per batch)</h3>
+<h3>Fuel consumption (bags per calendar day)</h3>
 <canvas id="consumption-chart" height="120"></canvas>
 <script>
 (function () {
     const canvas = document.getElementById('consumption-chart');
     if (canvas.chart) canvas.chart.destroy();
-    const series = {{ series | tojson }};
+    const daily = {{ daily | tojson }};
+    canvas.chart = new Chart(canvas, {
+        type: 'bar',
+        data: {
+            labels: daily.map(d => new Date(d.day * 1000).toLocaleDateString() + (d.partial ? ' (so far)' : '')),
+            datasets: [
+                {
+                    type: 'line',
+                    label: '7-day average',
+                    data: daily.map(d => d.avg),
+                    borderColor: '#e67e22',
+                    backgroundColor: '#e67e22',
+                    pointRadius: 0,
+                    tension: 0.3,
+                    order: 0,
+                },
+                {
+                    label: 'bags burned',
+                    data: daily.map(d => d.known),
+                    backgroundColor: '#3498db',
+                    stack: 'bags',
+                    order: 1,
+                },
+                {
+                    label: 'bags burned (estimated)',
+                    data: daily.map(d => d.provisional),
+                    backgroundColor: '#e74c3c',
+                    stack: 'bags',
+                    order: 1,
+                },
+            ]
+        },
+        options: {
+            scales: {
+                x: { stacked: true },
+                y: { stacked: true, beginAtZero: true, title: { display: true, text: 'bags/day' } }
+            }
+        }
+    });
+})();
+</script>
+<p><small>Includes idle days. <span style="color:#e74c3c">Red</span> = burned from the current batch, using its estimated burn rate. Today's bar is only partial.</small></p>
+
+<h4>Burn rate (bags per hour of burn, per batch)</h4>
+<canvas id="burn-chart" height="80"></canvas>
+<script>
+(function () {
+    const canvas = document.getElementById('burn-chart');
+    if (canvas.chart) canvas.chart.destroy();
+    const series = {{ burn | tojson }};
     canvas.chart = new Chart(canvas, {
         type: 'line',
         data: {
             datasets: [{
-                label: 'bags/day',
-                data: series.map(p => ({ x: p.start * 1000, y: p.bags_per_day })),
+                label: 'bags/h of burn',
+                data: series.map(p => ({ x: p.start * 1000, y: p.bags_per_hour })),
                 pointBackgroundColor: series.map(p => p.provisional ? '#e74c3c' : '#3498db'),
+                pointRadius: series.map(p => p.synthetic ? 0 : 3),
+                stepped: 'before',
                 borderColor: '#3498db',
             }]
         },
         options: {
             scales: {
-                x: { type: 'linear', ticks: { callback: v => new Date(v).toLocaleDateString() } },
-                y: { title: { display: true, text: 'bags/day' } }
+                x: { type: 'linear', {% if x_min %}min: {{ x_min * 1000 }}, max: {{ x_max * 1000 }}, {% endif %}ticks: { callback: v => new Date(v).toLocaleDateString() } },
+                y: { title: { display: true, text: 'bags/h' } }
             }
         }
     });

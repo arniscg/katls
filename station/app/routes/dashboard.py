@@ -42,6 +42,27 @@ class Snapshot:
         self.segments = A.build_segments(self.all_cycles, self.batches, start, self.now)
 
 
+def _window_step_series(points: list[dict], time_key: str, window_start: float, now: float) -> list[dict]:
+    """
+    Clip a step series (value holds until the next point) to [window_start, now].
+    The value in effect at window_start is carried in as a synthetic point, and
+    the latest value is extended to `now`, so a short window still draws a line
+    even when it contains zero or one real events. Synthetic points have
+    `synthetic: True` so the chart can hide their markers.
+    """
+    if not points:
+        return []
+    before = [p for p in points if p[time_key] < window_start]
+    inside = [p for p in points if p[time_key] >= window_start]
+    out = []
+    if before:
+        out.append({**before[-1], time_key: window_start, "synthetic": True})
+    out.extend(inside)
+    if out and out[-1][time_key] < now:
+        out.append({**out[-1], time_key: now, "synthetic": True})
+    return out
+
+
 def _snapshot(db=Depends(db_get)) -> Snapshot:
     return Snapshot(db_get_events_for_analytics(db))
 
@@ -57,7 +78,11 @@ def status(request: Request, s: Snapshot = Depends(_snapshot)):
     stock = A.current_stock(s.events)
     hopper = A.hopper_level(s.batches, s.all_cycles, s.now)
     cleaning = A.cleaning_status(s.events, s.now)
-    consumption = A.current_consumption(s.batches)
+    consumption = {
+        "burn": A.current_consumption(s.batches),
+        "last_7_days": A.recent_rate_per_day(s.segments, s.now, window_days=7),
+        "season": A.season_rate_per_day(s.segments, s.seasons, s.now),
+    }
     last_event_age_days = (s.now - s.events[-1]["time"]) / 86400 if s.events else None
     return templates.TemplateResponse(
         request,
@@ -80,7 +105,7 @@ def stock(request: Request, period: str = "month", s: Snapshot = Depends(_snapsh
     seasonal = A.seasonal_rate_per_day(s.seasons, s.segments, s.now)
     estimate = A.estimated_days_remaining(stock, recent, seasonal)
     window_start = A.range_window_start(period, s.seasons, s.now)
-    timeline = [p for p in A.stock_timeline(s.events) if p["time"] >= window_start]
+    timeline = _window_step_series(A.stock_timeline(s.events), "time", window_start, s.now)
     return templates.TemplateResponse(
         request,
         "dashboard/stock.html",
@@ -91,6 +116,8 @@ def stock(request: Request, period: str = "month", s: Snapshot = Depends(_snapsh
             "estimate": estimate,
             "timeline": timeline,
             "period": period,
+            "x_min": window_start,
+            "x_max": s.now,
         },
     )
 
@@ -104,9 +131,13 @@ def seasons(request: Request, s: Snapshot = Depends(_snapshot)):
 @router.get("/consumption", response_class=HTMLResponse)
 def consumption(request: Request, period: str = "month", s: Snapshot = Depends(_snapshot)):
     window_start = A.range_window_start(period, s.seasons, s.now)
-    series = [p for p in A.consumption_series(s.batches) if p["start"] >= window_start]
+    data_start = s.events[0]["time"] if s.events else s.now
+    daily = A.daily_consumption(s.segments, max(window_start, data_start), s.now)
+    burn = _window_step_series(A.consumption_series(s.batches), "start", window_start, s.now)
     return templates.TemplateResponse(
-        request, "dashboard/consumption.html", context={"series": series, "period": period}
+        request,
+        "dashboard/consumption.html",
+        context={"daily": daily, "burn": burn, "period": period, "x_min": window_start, "x_max": s.now},
     )
 
 
@@ -121,7 +152,9 @@ def cleaning(request: Request, period: str = "month", s: Snapshot = Depends(_sna
         if cleans[i] >= window_start
     ]
     return templates.TemplateResponse(
-        request, "dashboard/cleaning.html", context={"gaps": gaps, "status": status, "period": period}
+        request,
+        "dashboard/cleaning.html",
+        context={"gaps": gaps, "status": status, "period": period, "x_min": window_start, "x_max": s.now},
     )
 
 

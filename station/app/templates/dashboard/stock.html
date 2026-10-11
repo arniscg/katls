@@ -24,13 +24,13 @@
                 data: points.map(p => ({ x: p.time * 1000, y: p.stock })),
                 stepped: 'before',
                 pointBackgroundColor: points.map(p => p.event === 'restock' ? '#2ecc71' : '#e67e22'),
-                pointRadius: 4,
+                pointRadius: points.map(p => p.synthetic ? 0 : 4),
                 borderColor: '#3498db',
             }]
         },
         options: {
             scales: {
-                x: { type: 'linear', ticks: { callback: v => new Date(v).toLocaleDateString() } },
+                x: { type: 'linear', {% if x_min %}min: {{ x_min * 1000 }}, max: {{ x_max * 1000 }}, {% endif %}ticks: { callback: v => new Date(v).toLocaleDateString() } },
                 y: { title: { display: true, text: 'bags' } }
             }
         }
